@@ -18,6 +18,7 @@ interface ChartDef {
 }
 
 const CHART_DEFS: ChartDef[] = [
+  // --- ECU / sim channels ---
   {
     title: "RPM",
     el: "chart-engine",
@@ -29,8 +30,11 @@ const CHART_DEFS: ChartDef[] = [
   {
     title: "SPEED",
     el: "chart-speed",
-    channels: ["speed"],
-    seriesOpts: [{ label: "Speed", stroke: "#3498db" }],
+    channels: ["speed", "gps_speed"],
+    seriesOpts: [
+      { label: "ECU", stroke: "#3498db" },
+      { label: "GPS", stroke: "#2ecc71" },
+    ],
     yRange: [0, 350],
     yLabel: "km/h",
   },
@@ -57,6 +61,47 @@ const CHART_DEFS: ChartDef[] = [
     ],
     yRange: [50, 150],
     yLabel: "°C",
+  },
+  // --- RaceBox GPS/IMU channels ---
+  {
+    title: "G-FORCE",
+    el: "chart-gforce",
+    channels: ["g_force_x", "g_force_y", "g_force_z"],
+    seriesOpts: [
+      { label: "Lat (Y)", stroke: "#e74c3c" },
+      { label: "Lon (X)", stroke: "#3498db" },
+      { label: "Vert (Z)", stroke: "#2ecc71" },
+    ],
+    yRange: [-3, 3],
+    yLabel: "g",
+  },
+  {
+    title: "GYRO",
+    el: "chart-gyro",
+    channels: ["gyro_x", "gyro_y", "gyro_z"],
+    seriesOpts: [
+      { label: "X", stroke: "#e67e22" },
+      { label: "Y", stroke: "#9b59b6" },
+      { label: "Z", stroke: "#1abc9c" },
+    ],
+    yRange: [-200, 200],
+    yLabel: "°/s",
+  },
+  {
+    title: "GPS HEADING",
+    el: "chart-heading",
+    channels: ["gps_heading"],
+    seriesOpts: [{ label: "Heading", stroke: "#f1c40f" }],
+    yRange: [0, 360],
+    yLabel: "°",
+  },
+  {
+    title: "GPS ALTITUDE",
+    el: "chart-altitude",
+    channels: ["gps_altitude"],
+    seriesOpts: [{ label: "Alt MSL", stroke: "#1abc9c" }],
+    yRange: [-50, 500],
+    yLabel: "m",
   },
 ];
 

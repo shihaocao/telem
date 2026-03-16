@@ -1,0 +1,16 @@
+[Unit]
+Description=Race telemetry server
+After=network.target
+
+[Service]
+Type=simple
+User=gearados
+WorkingDirectory=/home/gearados/repos/telem/server
+ExecStart=/usr/bin/npx tsx src/main.ts
+Environment=DATA_DIR=/home/gearados/repos/telem/server/data
+Environment=PORT=4400
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+{
+  "name": "racebox-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bridge": "tsx src/bridge.ts"
+  },
+  "dependencies": {
+    "node-ble": "^1.12.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "typescript": "^5.7.0"
+  }
+}
