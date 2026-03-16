@@ -1,6 +1,7 @@
 import "./style.css";
 import { TelemetryManager } from "./telemetry";
 import { createPanels, ChartPanel } from "./charts";
+import { createMaps, MapPanels } from "./map";
 import { ConnectionState } from "./types";
 
 const statusEl = document.getElementById("connection-status")!;
@@ -22,11 +23,16 @@ mgr.onStateChange = (state) => {
   statusEl.className = state;
 };
 
-// wait for DOM then create charts
 let panels: ChartPanel[] = [];
+let maps: MapPanels;
 
 function init() {
   panels = createPanels(mgr);
+  maps = createMaps(
+    document.getElementById("map-follow")!,
+    document.getElementById("map-overview")!,
+    mgr,
+  );
   mgr.connect();
   requestAnimationFrame(loop);
 }
@@ -38,6 +44,7 @@ let lastRateCheck = performance.now();
 function loop() {
   if (mgr.dirty) {
     for (const p of panels) p.update();
+    maps.update();
 
     // update stats
     const seq = mgr.lastSeqNum;

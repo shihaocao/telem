@@ -92,15 +92,48 @@ body {
   box-shadow: 0 0 6px #e74c3c;
 }
 
-#charts {
+#dashboard {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
   gap: 4px;
   padding: 4px;
   flex: 1;
   min-height: 0;
 }
+
+#map-follow .leaflet-container {
+  background: var(--panel-bg);
+}
+
+#map-overview .maplibregl-canvas-container {
+  background: var(--panel-bg);
+}
+
+.overview-finish {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.finish-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.finish-text {
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  font-family: "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  text-shadow: 0 0 4px rgba(0,0,0,0.8);
+}
+
 
 .chart-panel {
   background: var(--panel-bg);
@@ -137,4 +170,29 @@ body {
 
 .u-cursor-pt {
   display: none !important;
+}
+
+.finish-label {
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  font-family: inherit;
+  white-space: nowrap;
+  text-shadow: 0 0 4px rgba(0,0,0,0.8);
+}
+
+.turn-label {
+  color: rgba(255,255,255,0.45);
+  font-size: 9px;
+  font-weight: 600;
+  font-family: inherit;
+  text-align: center;
+  line-height: 14px;
+  text-shadow: 0 0 3px rgba(0,0,0,0.9);
+}
+
+.sf-label {
+  color: #ef4444;
+  font-weight: 700;
 }

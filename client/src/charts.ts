@@ -18,15 +18,6 @@ interface ChartDef {
 }
 
 const CHART_DEFS: ChartDef[] = [
-  // --- ECU / sim channels ---
-  {
-    title: "RPM",
-    el: "chart-engine",
-    channels: ["rpm"],
-    seriesOpts: [{ label: "RPM", stroke: "#e74c3c" }],
-    yRange: [0, 14000],
-    yLabel: "rpm",
-  },
   {
     title: "SPEED",
     el: "chart-speed",
@@ -39,31 +30,6 @@ const CHART_DEFS: ChartDef[] = [
     yLabel: "km/h",
   },
   {
-    title: "PEDALS",
-    el: "chart-pedals",
-    channels: ["throttle", "brake"],
-    seriesOpts: [
-      { label: "Throttle", stroke: "#2ecc71" },
-      { label: "Brake", stroke: "#e74c3c" },
-    ],
-    yRange: [0, 100],
-    yLabel: "%",
-  },
-  {
-    title: "WHEEL TEMPS",
-    el: "chart-temps",
-    channels: ["wheel_temp_fl", "wheel_temp_fr", "wheel_temp_rl", "wheel_temp_rr"],
-    seriesOpts: [
-      { label: "FL", stroke: "#1abc9c" },
-      { label: "FR", stroke: "#f39c12" },
-      { label: "RL", stroke: "#9b59b6" },
-      { label: "RR", stroke: "#e67e22" },
-    ],
-    yRange: [50, 150],
-    yLabel: "°C",
-  },
-  // --- RaceBox GPS/IMU channels ---
-  {
     title: "G-FORCE",
     el: "chart-gforce",
     channels: ["g_force_x", "g_force_y", "g_force_z"],
@@ -74,34 +40,6 @@ const CHART_DEFS: ChartDef[] = [
     ],
     yRange: [-3, 3],
     yLabel: "g",
-  },
-  {
-    title: "GYRO",
-    el: "chart-gyro",
-    channels: ["gyro_x", "gyro_y", "gyro_z"],
-    seriesOpts: [
-      { label: "X", stroke: "#e67e22" },
-      { label: "Y", stroke: "#9b59b6" },
-      { label: "Z", stroke: "#1abc9c" },
-    ],
-    yRange: [-200, 200],
-    yLabel: "°/s",
-  },
-  {
-    title: "GPS HEADING",
-    el: "chart-heading",
-    channels: ["gps_heading"],
-    seriesOpts: [{ label: "Heading", stroke: "#f1c40f" }],
-    yRange: [0, 360],
-    yLabel: "°",
-  },
-  {
-    title: "GPS ALTITUDE",
-    el: "chart-altitude",
-    channels: ["gps_altitude"],
-    seriesOpts: [{ label: "Alt MSL", stroke: "#1abc9c" }],
-    yRange: [-50, 500],
-    yLabel: "m",
   },
 ];
 
@@ -151,11 +89,11 @@ function makeOpts(
         grid: { stroke: "rgba(255,255,255,0.06)", width: 1 },
         ticks: { stroke: "rgba(255,255,255,0.1)", width: 1 },
         label: def.yLabel,
-        range: () => def.yRange,
       },
     ],
     scales: {
       x: { time: false },
+      y: { range: () => def.yRange },
     },
   };
 }
