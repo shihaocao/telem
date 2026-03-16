@@ -1,0 +1,140 @@
+@import "uplot/dist/uPlot.min.css";
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #0d0d1a;
+  --panel-bg: #13132a;
+  --border: #1e1e3a;
+  --text: #ccc;
+  --text-dim: #666;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 13px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: #0a0a18;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.title {
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 2px;
+  color: #eee;
+}
+
+.status-group {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.stat {
+  color: var(--text-dim);
+}
+
+.stat b {
+  color: var(--text);
+}
+
+#connection-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+#connection-status::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #555;
+}
+
+#connection-status.live::before {
+  background: #2ecc71;
+  box-shadow: 0 0 6px #2ecc71;
+}
+
+#connection-status.connecting::before,
+#connection-status.replaying::before {
+  background: #f1c40f;
+  box-shadow: 0 0 6px #f1c40f;
+}
+
+#connection-status.disconnected::before,
+#connection-status.error::before {
+  background: #e74c3c;
+  box-shadow: 0 0 6px #e74c3c;
+}
+
+#charts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  flex: 1;
+  min-height: 0;
+}
+
+.chart-panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+  min-height: 0;
+}
+
+/* uPlot overrides for dark theme */
+.u-title {
+  font-family: inherit !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  letter-spacing: 1px !important;
+  color: #888 !important;
+  padding: 4px 0 0 !important;
+}
+
+.u-legend {
+  font-family: inherit !important;
+  font-size: 11px !important;
+  padding: 2px 8px !important;
+}
+
+.u-legend .u-series td {
+  color: #999 !important;
+}
+
+.u-legend .u-value {
+  color: #ddd !important;
+}
+
+.u-cursor-pt {
+  display: none !important;
+}

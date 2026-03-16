@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Telemetry</title>
+</head>
+<body>
+  <header id="status-bar">
+    <span class="title">TELEMETRY</span>
+    <div class="status-group">
+      <span class="stat">seq <b id="stat-seq">0</b></span>
+      <span class="stat">rate <b id="stat-rate">--</b></span>
+      <span id="connection-status" class="disconnected">DISCONNECTED</span>
+    </div>
+  </header>
+  <main id="charts">
+    <div id="chart-engine" class="chart-panel"></div>
+    <div id="chart-speed" class="chart-panel"></div>
+    <div id="chart-pedals" class="chart-panel"></div>
+    <div id="chart-temps" class="chart-panel"></div>
+  </main>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

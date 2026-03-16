@@ -7,7 +7,9 @@
     "start": "tsx src/main.ts",
     "dev": "tsx watch src/main.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "gen-data": "tsx scripts/gen-data.ts",
+    "nuke": "rm -rf data/wal data/snapshots"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
