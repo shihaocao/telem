@@ -2,7 +2,6 @@
 set -euo pipefail
 
 DEVICE="F0:3A:C0:59:48:B7"
-ADAPTER="hci0"
 SCAN_DURATION=10
 MAX_WAIT=30
 
@@ -11,7 +10,7 @@ log() { echo "[racebox] $(date '+%H:%M:%S') $*"; }
 # wait for bluetooth daemon
 log "waiting for bluetoothd..."
 waited=0
-while ! bluetoothctl show "$ADAPTER" &>/dev/null; do
+while ! bluetoothctl show &>/dev/null; do
   sleep 1
   waited=$((waited + 1))
   if [ "$waited" -ge "$MAX_WAIT" ]; then
@@ -22,7 +21,7 @@ done
 log "bluetoothd ready (${waited}s)"
 
 # power on adapter
-log "powering on $ADAPTER"
+log "powering on adapter"
 bluetoothctl power on
 
 # scan for BLE device
