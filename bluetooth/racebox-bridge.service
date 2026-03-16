@@ -6,7 +6,7 @@ Wants=racebox-connect.service telem-server.service
 [Service]
 Type=simple
 WorkingDirectory=/home/gearados/repos/telem/bluetooth
-ExecStart=/usr/bin/npx tsx src/bridge.ts
+ExecStart=/bin/bash -c 'source /home/gearados/.nvm/nvm.sh && exec npx tsx src/bridge.ts'
 Environment=INGEST_URL=http://localhost:4400/ingest
 Environment=RACEBOX_MAC=F0:3A:C0:59:48:B7
 Restart=on-failure
