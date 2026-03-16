@@ -196,3 +196,35 @@ body {
   color: #ef4444;
   font-weight: 700;
 }
+
+.car-arrow {
+  background: none !important;
+  border: none !important;
+}
+
+.speed-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.speed-value {
+  font-size: 72px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.6);
+}
+
+.speed-unit {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.35);
+  letter-spacing: 2px;
+  margin-top: 4px;
+}

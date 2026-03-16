@@ -40,12 +40,7 @@ export class TelemetryManager {
 
     this.setState("connecting");
 
-    // On first connect with no data, skip history. On reconnect, replay from lastSeq.
-    const params = this.lastSeq > 0
-      ? `after_seq=${this.lastSeq}`
-      : "history=false";
-
-    const es = new EventSource(`${SERVER_URL}/stream?${params}`);
+    const es = new EventSource(`${SERVER_URL}/stream?history=false`);
     this.es = es;
 
     es.addEventListener("entry", (e) => {

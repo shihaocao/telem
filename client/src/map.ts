@@ -16,6 +16,38 @@ const TILE_OPTS: L.TileLayerOptions = { maxZoom: 20, subdomains: "abcd" };
 
 const TRACK_BEARING = -35;
 
+/** Snap a point to the nearest position on the track centerline. */
+function snapToTrack(lat: number, lon: number): [number, number] {
+  let bestDist = Infinity;
+  let bestPt: [number, number] = [lat, lon];
+
+  for (let i = 0; i < SONOMA_TRACK.length - 1; i++) {
+    const [aLat, aLon] = SONOMA_TRACK[i];
+    const [bLat, bLon] = SONOMA_TRACK[i + 1];
+
+    // project point onto segment [a, b]
+    const dx = bLon - aLon;
+    const dy = bLat - aLat;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) continue;
+
+    const t = Math.max(0, Math.min(1, ((lon - aLon) * dx + (lat - aLat) * dy) / lenSq));
+    const pLat = aLat + t * dy;
+    const pLon = aLon + t * dx;
+
+    const dLat = lat - pLat;
+    const dLon = lon - pLon;
+    const dist = dLat * dLat + dLon * dLon;
+
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestPt = [pLat, pLon];
+    }
+  }
+
+  return bestPt;
+}
+
 export interface MapPanels {
   update: () => void;
 }
@@ -75,13 +107,19 @@ export function createMaps(
     weight: 2.5,
   }).addTo(followMap);
 
-  const followMarker = L.circleMarker([0, 0], {
-    radius: 5,
-    color: MARKER_COLOR,
-    fillColor: TRAIL_COLOR,
-    fillOpacity: 1,
-    weight: 2,
-  });
+  function makeArrowIcon(heading: number): L.DivIcon {
+    return L.divIcon({
+      className: "car-arrow",
+      html: `<svg width="20" height="20" viewBox="0 0 20 20" style="transform:rotate(${heading}deg)">
+        <polygon points="10,2 16,16 10,12 4,16" fill="${TRAIL_COLOR}" stroke="${MARKER_COLOR}" stroke-width="1.5"/>
+      </svg>`,
+      iconSize: [20, 20],
+      iconAnchor: [10, 10],
+    });
+  }
+
+  let followHeading = 0;
+  const followMarker = L.marker([0, 0], { icon: makeArrowIcon(0), interactive: false });
 
   let followHasPos = false;
   let followZoom = 17;
@@ -138,13 +176,7 @@ export function createMaps(
 
   let overviewTrailSegments: L.Polyline[] = [];
 
-  const overviewMarker = L.circleMarker([0, 0], {
-    radius: 4,
-    color: MARKER_COLOR,
-    fillColor: TRAIL_COLOR,
-    fillOpacity: 1,
-    weight: 2,
-  });
+  const overviewMarker = L.marker([0, 0], { icon: makeArrowIcon(0), interactive: false });
 
   // resize handlers
   new ResizeObserver(() => followMap.invalidateSize()).observe(followEl);
@@ -178,6 +210,18 @@ export function createMaps(
       if (la !== 0 || lo !== 0) coords.push([la, lo]);
     }
 
+    // read heading
+    const hdgBuf = mgr.getBuffer("gps_heading");
+    const heading = hdgBuf?.values.length ? hdgBuf.values[hdgBuf.values.length - 1] : 0;
+
+    // update arrow icons when heading changes
+    if (heading !== followHeading) {
+      followHeading = heading;
+      const icon = makeArrowIcon(heading);
+      followMarker.setIcon(icon);
+      overviewMarker.setIcon(icon);
+    }
+
     // --- update follow map ---
     followTrail.setLatLngs(coords as L.LatLngExpression[]);
     followMarker.setLatLng([lat, lon]);
@@ -198,9 +242,11 @@ export function createMaps(
       followMap.panTo([lat, lon], { animate: false });
     }
 
-    // --- update overview map (decay trail) ---
-    overviewTrailSegments = buildDecayTrail(overviewMap, coords, overviewTrailSegments);
-    overviewMarker.setLatLng([lat, lon]);
+    // --- update overview map (snap GPS to track centerline) ---
+    const snappedCoords = coords.map(([la, lo]) => snapToTrack(la, lo));
+    overviewTrailSegments = buildDecayTrail(overviewMap, snappedCoords, overviewTrailSegments);
+    const [sLat, sLon] = snapToTrack(lat, lon);
+    overviewMarker.setLatLng([sLat, sLon]);
     if (!overviewMap.hasLayer(overviewMarker)) {
       overviewMarker.addTo(overviewMap);
     }

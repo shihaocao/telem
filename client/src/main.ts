@@ -2,9 +2,11 @@ import "./style.css";
 import { TelemetryManager } from "./telemetry";
 import { createPanels, ChartPanel } from "./charts";
 import { createMaps, MapPanels } from "./map";
+import { createGCircle, GCirclePanel } from "./gcircle";
 import { ConnectionState } from "./types";
 
 const statusEl = document.getElementById("connection-status")!;
+const headingEl = document.getElementById("stat-heading")!;
 const seqEl = document.getElementById("stat-seq")!;
 const rateEl = document.getElementById("stat-rate")!;
 
@@ -25,6 +27,7 @@ mgr.onStateChange = (state) => {
 
 let panels: ChartPanel[] = [];
 let maps: MapPanels;
+let gcircle: GCirclePanel;
 
 function init() {
   panels = createPanels(mgr);
@@ -33,6 +36,7 @@ function init() {
     document.getElementById("map-overview")!,
     mgr,
   );
+  gcircle = createGCircle(document.getElementById("gcircle")!, mgr);
   mgr.connect();
   requestAnimationFrame(loop);
 }
@@ -45,10 +49,17 @@ function loop() {
   if (mgr.dirty) {
     for (const p of panels) p.update();
     maps.update();
+    gcircle.update();
 
     // update stats
     const seq = mgr.lastSeqNum;
     seqEl.textContent = String(seq);
+
+    const hdgBuf = mgr.getBuffer("gps_heading");
+    if (hdgBuf && hdgBuf.values.length > 0) {
+      const hdg = hdgBuf.values[hdgBuf.values.length - 1];
+      headingEl.textContent = `${Math.round(hdg)}°`;
+    }
 
     entryCount++;
     const now = performance.now();

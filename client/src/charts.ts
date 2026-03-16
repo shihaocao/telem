@@ -3,112 +3,46 @@ import { ChannelBuffer } from "./types";
 import { TelemetryManager } from "./telemetry";
 
 export interface ChartPanel {
-  chart: uPlot;
-  channels: string[];
   update: () => void;
 }
 
-interface ChartDef {
-  title: string;
-  el: string;
-  channels: string[];
-  seriesOpts: Array<{ label: string; stroke: string; width?: number }>;
-  yRange: [number, number];
-  yLabel: string;
-}
+const KMH_TO_MPH = 0.621371;
 
-const CHART_DEFS: ChartDef[] = [
-  {
-    title: "SPEED",
-    el: "chart-speed",
-    channels: ["speed", "gps_speed"],
-    seriesOpts: [
-      { label: "ECU", stroke: "#3498db" },
-      { label: "GPS", stroke: "#2ecc71" },
-    ],
-    yRange: [0, 350],
-    yLabel: "km/h",
-  },
-  {
-    title: "G-FORCE",
-    el: "chart-gforce",
-    channels: ["g_force_x", "g_force_y", "g_force_z"],
-    seriesOpts: [
-      { label: "Lat (Y)", stroke: "#e74c3c" },
-      { label: "Lon (X)", stroke: "#3498db" },
-      { label: "Vert (Z)", stroke: "#2ecc71" },
-    ],
-    yRange: [-3, 3],
-    yLabel: "g",
-  },
-];
-
-function formatTime(self: uPlot, splits: number[]): string[] {
-  return splits.map((v) => {
-    if (v == null) return "";
-    const d = new Date(v * 1000);
-    const m = String(d.getMinutes()).padStart(2, "0");
-    const s = String(d.getSeconds()).padStart(2, "0");
-    return `${m}:${s}`;
-  });
-}
-
-function makeOpts(
-  def: ChartDef,
-  width: number,
-  height: number,
-): uPlot.Options {
-  const series: uPlot.Series[] = [
-    { label: "Time", value: (_, v) => v == null ? "--" : new Date(v * 1000).toLocaleTimeString() },
-  ];
-
-  for (const s of def.seriesOpts) {
-    series.push({
-      label: s.label,
-      stroke: s.stroke,
-      width: s.width ?? 1.5,
-      points: { show: false },
-    });
-  }
-
+function buildSparklineOpts(width: number, height: number): uPlot.Options {
   return {
     width,
     height,
-    title: def.title,
-    cursor: { show: true, drag: { x: false, y: false } },
-    series,
+    cursor: { show: false },
+    legend: { show: false },
+    series: [
+      {},
+      {
+        stroke: "rgba(52, 152, 219, 0.6)",
+        width: 2,
+        fill: "rgba(52, 152, 219, 0.1)",
+        points: { show: false },
+      },
+      {
+        stroke: "rgba(46, 204, 113, 0.45)",
+        width: 1.5,
+        points: { show: false },
+      },
+    ],
     axes: [
-      {
-        stroke: "#666",
-        grid: { stroke: "rgba(255,255,255,0.06)", width: 1 },
-        ticks: { stroke: "rgba(255,255,255,0.1)", width: 1 },
-        values: formatTime,
-      },
-      {
-        stroke: "#666",
-        grid: { stroke: "rgba(255,255,255,0.06)", width: 1 },
-        ticks: { stroke: "rgba(255,255,255,0.1)", width: 1 },
-        label: def.yLabel,
-      },
+      { show: false },
+      { show: false },
     ],
     scales: {
       x: { time: false },
-      y: { range: () => def.yRange },
+      y: { range: () => [0, 220] as uPlot.Range.MinMax },
     },
   };
 }
 
-/**
- * Build unified x-axis from multiple channel buffers.
- * All channels from the data generator share timestamps so we just use the
- * longest buffer's timestamps and align the others by index (they arrive in lockstep).
- * For robustness, if lengths differ we pad shorter series with nulls.
- */
 function buildData(
   channels: string[],
   mgr: TelemetryManager,
 ): uPlot.AlignedData {
-  // find the channel with most data to use as the x-axis
   let bestBuf: ChannelBuffer | undefined;
   for (const ch of channels) {
     const b = mgr.getBuffer(ch);
@@ -132,11 +66,13 @@ function buildData(
     if (!buf || buf.values.length === 0) {
       data.push(new Array(xs.length).fill(null) as any);
     } else if (buf.values.length === xs.length) {
-      data.push(buf.values);
+      // convert km/h to mph for display
+      data.push(buf.values.map((v) => v * KMH_TO_MPH));
     } else {
-      // pad front with nulls if this channel started later
       const pad = xs.length - buf.values.length;
-      const padded = new Array(pad).fill(null).concat(buf.values);
+      const padded = new Array(pad).fill(null).concat(
+        buf.values.map((v) => v * KMH_TO_MPH),
+      );
       data.push(padded as any);
     }
   }
@@ -145,32 +81,42 @@ function buildData(
 }
 
 export function createPanels(mgr: TelemetryManager): ChartPanel[] {
-  const panels: ChartPanel[] = [];
+  const container = document.getElementById("chart-speed")!;
 
-  for (const def of CHART_DEFS) {
-    const container = document.getElementById(def.el)!;
-    const rect = container.getBoundingClientRect();
-    const opts = makeOpts(def, rect.width, rect.height - 4);
-    const emptyData: uPlot.AlignedData = [[]];
-    for (let i = 0; i < def.channels.length; i++) emptyData.push([]);
-    const chart = new uPlot(opts, emptyData, container);
+  // speed overlay
+  const overlay = document.createElement("div");
+  overlay.className = "speed-overlay";
+  overlay.innerHTML = `<span class="speed-value">--</span><span class="speed-unit">MPH</span>`;
+  container.appendChild(overlay);
 
-    const update = () => {
-      const data = buildData(def.channels, mgr);
-      chart.setData(data);
-    };
+  const rect = container.getBoundingClientRect();
+  const channels = ["speed", "gps_speed"];
+  const opts = buildSparklineOpts(rect.width, rect.height);
+  const chart = new uPlot(opts, [[], [], []], container);
 
-    // resize on container size change
-    const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const { width, height } = entry.contentRect;
-        chart.setSize({ width, height: height - 4 });
-      }
-    });
-    ro.observe(container);
+  const valueEl = overlay.querySelector(".speed-value")!;
 
-    panels.push({ chart, channels: def.channels, update });
-  }
+  const update = () => {
+    const data = buildData(channels, mgr);
+    chart.setData(data);
 
-  return panels;
+    // update big number from gps_speed (preferred) or ecu speed
+    const gpsBuf = mgr.getBuffer("gps_speed");
+    const ecuBuf = mgr.getBuffer("speed");
+    const buf = gpsBuf?.values.length ? gpsBuf : ecuBuf;
+    if (buf && buf.values.length > 0) {
+      const mph = buf.values[buf.values.length - 1] * KMH_TO_MPH;
+      valueEl.textContent = String(Math.round(mph));
+    }
+  };
+
+  const ro = new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      const { width, height } = entry.contentRect;
+      chart.setSize({ width, height });
+    }
+  });
+  ro.observe(container);
+
+  return [{ update }];
 }
