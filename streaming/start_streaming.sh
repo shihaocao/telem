@@ -22,15 +22,11 @@ fi
 
 echo "Found ${#DEVICES[@]} camera(s): ${DEVICES[*]}"
 
-# Configure C930e: narrow FOV via zoom, fixed exposure
+# Find C930e device
+C930E_DEV=""
 for dev in "${DEVICES[@]}"; do
   if v4l2-ctl -d "$dev" --all 2>/dev/null | grep -q "C930e"; then
-    v4l2-ctl -d "$dev" \
-      --set-ctrl=zoom_absolute=200 \
-      --set-ctrl=exposure_auto=1 \
-      --set-ctrl=exposure_absolute=10 \
-      --set-ctrl=gain=0
-    echo "Configured ${dev} (C930e): zoom=200, manual exposure"
+    C930E_DEV="$dev"
     break
   fi
 done
@@ -73,10 +69,16 @@ for i in "${!DEVICES[@]}"; do
 
   w=${res%x*}
   h=${res#*x}
+  # Set extra-controls for C930e
+  V4L2_EXTRA=""
+  if [ "$dev" = "$C930E_DEV" ]; then
+    V4L2_EXTRA='extra-controls="s,zoom_absolute=150,exposure_auto=1,exposure_absolute=20,gain=0"'
+  fi
+
   if [ "$i" -eq 0 ]; then
     echo "Streaming ${dev} (MJPEG ${res} + audio) → udp://${TAILSCALE_HOST}:${port} ..."
     gst-launch-1.0 -e \
-      v4l2src device="${dev}" \
+      v4l2src device="${dev}" ${V4L2_EXTRA} \
       ! "image/jpeg,width=${w},height=${h},framerate=30/1" \
       ! jpegdec ! nvvidconv flip-method=2 ! 'video/x-raw(memory:NVMM)' \
       ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
@@ -91,7 +93,7 @@ for i in "${!DEVICES[@]}"; do
   else
     echo "Streaming ${dev} (MJPEG ${res}) → udp://${TAILSCALE_HOST}:${port} ..."
     gst-launch-1.0 -e \
-      v4l2src device="${dev}" \
+      v4l2src device="${dev}" ${V4L2_EXTRA} \
       ! "image/jpeg,width=${w},height=${h},framerate=30/1" \
       ! jpegdec ! nvvidconv flip-method=2 ! 'video/x-raw(memory:NVMM)' \
       ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
