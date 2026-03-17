@@ -37,8 +37,7 @@ detect_res() {
     return
   fi
 
-  local max_res="${2:-1920x1080}"
-  for res in ${max_res} 1280x720; do
+  for res in 1280x720; do
     if echo "$mjpg_section" | grep -q "${res}"; then
       echo "$res"
       return
@@ -48,24 +47,12 @@ detect_res() {
   echo "none"
 }
 
-MAX_1080P=2
-count_1080=0
-
 PIDS=()
 for i in "${!DEVICES[@]}"; do
   dev="${DEVICES[$i]}"
   port=$((BASE_PORT + i))
 
-  # Cap 1080p streams to avoid DMA buffer exhaustion
-  if [ "$count_1080" -ge "$MAX_1080P" ]; then
-    res=$(detect_res "$dev" "1280x720")
-  else
-    res=$(detect_res "$dev")
-  fi
-
-  if [ "$res" = "1920x1080" ]; then
-    count_1080=$((count_1080 + 1))
-  fi
+  res=$(detect_res "$dev")
   if [ "$res" = "none" ]; then
     echo "Skipping ${dev}: no MJPEG 1080p or 720p support"
     continue
@@ -82,8 +69,6 @@ for i in "${!DEVICES[@]}"; do
     ! h264parse ! mpegtsmux alignment=7 \
     ! udpsink host="${SRT_TAILSCALE_HOST}" port="${port}" sync=false &
   PIDS+=($!)
-  # stagger launches to avoid simultaneous NVENC allocation failures
-  sleep 3
 done
 
 echo "All streams started. PIDs: ${PIDS[*]}"
