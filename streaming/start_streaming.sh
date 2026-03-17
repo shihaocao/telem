@@ -65,10 +65,12 @@ for i in "${!DEVICES[@]}"; do
     v4l2src device="${dev}" \
     ! "image/jpeg,width=${w},height=${h},framerate=30/1" \
     ! jpegdec ! nvvidconv ! 'video/x-raw(memory:NVMM)' \
-    ! nvv4l2h264enc bitrate=8000000 iframeinterval=15 insert-sps-pps=true \
+    ! nvv4l2h264enc bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
     ! h264parse ! mpegtsmux alignment=7 \
     ! udpsink host="${SRT_TAILSCALE_HOST}" port="${port}" sync=false &
   PIDS+=($!)
+  # stagger launches to avoid simultaneous NVENC allocation failures
+  sleep 3
 done
 
 echo "All streams started. PIDs: ${PIDS[*]}"
