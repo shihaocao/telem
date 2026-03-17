@@ -22,14 +22,23 @@ fi
 
 echo "Found ${#DEVICES[@]} camera(s): ${DEVICES[*]}"
 
-# Detect best MJPEG resolution for a device
+# Detect best MJPEG resolution for a device (must be under MJPG section)
 detect_res() {
   local dev="$1"
   local formats
   formats=$(v4l2-ctl -d "$dev" --list-formats-ext 2>/dev/null)
 
+  # Extract only the MJPG section
+  local mjpg_section
+  mjpg_section=$(echo "$formats" | sed -n '/MJPG/,/^\[/p')
+
+  if [ -z "$mjpg_section" ]; then
+    echo "none"
+    return
+  fi
+
   for res in 1920x1080 1280x720; do
-    if echo "$formats" | grep -q "${res}"; then
+    if echo "$mjpg_section" | grep -q "${res}"; then
       echo "$res"
       return
     fi
