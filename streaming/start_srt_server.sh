@@ -5,6 +5,7 @@
 set -euo pipefail
 
 NUM_STREAMS=${1:-2}
+
 BASE_PORT=9000
 
 PIDS=()
