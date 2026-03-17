@@ -10,9 +10,7 @@ BASE_PORT=9000
 DEVICES=()
 for dev in /dev/video*; do
   [ -e "$dev" ] || continue
-  # Check device capabilities for VIDEO_CAPTURE (0x1)
-  caps=$(v4l2-ctl -d "$dev" --all 2>/dev/null | grep "Device Caps" | head -1 || true)
-  if echo "$caps" | grep -q "Video Capture"; then
+  if v4l2-ctl -d "$dev" --all 2>/dev/null | grep -q "Format Video Capture:"; then
     DEVICES+=("$dev")
   fi
 done
