@@ -37,7 +37,8 @@ detect_res() {
     return
   fi
 
-  for res in 1920x1080 1280x720; do
+  local max_res="${2:-1920x1080}"
+  for res in ${max_res} 1280x720; do
     if echo "$mjpg_section" | grep -q "${res}"; then
       echo "$res"
       return
@@ -47,12 +48,24 @@ detect_res() {
   echo "none"
 }
 
+MAX_1080P=2
+count_1080=0
+
 PIDS=()
 for i in "${!DEVICES[@]}"; do
   dev="${DEVICES[$i]}"
   port=$((BASE_PORT + i))
 
-  res=$(detect_res "$dev")
+  # Cap 1080p streams to avoid DMA buffer exhaustion
+  if [ "$count_1080" -ge "$MAX_1080P" ]; then
+    res=$(detect_res "$dev" "1280x720")
+  else
+    res=$(detect_res "$dev")
+  fi
+
+  if [ "$res" = "1920x1080" ]; then
+    count_1080=$((count_1080 + 1))
+  fi
   if [ "$res" = "none" ]; then
     echo "Skipping ${dev}: no MJPEG 1080p or 720p support"
     continue
