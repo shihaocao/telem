@@ -22,6 +22,19 @@ fi
 
 echo "Found ${#DEVICES[@]} camera(s): ${DEVICES[*]}"
 
+# Configure C930e: narrow FOV via zoom, fixed exposure
+for dev in "${DEVICES[@]}"; do
+  if v4l2-ctl -d "$dev" --all 2>/dev/null | grep -q "C930e"; then
+    v4l2-ctl -d "$dev" \
+      --set-ctrl=zoom_absolute=200 \
+      --set-ctrl=exposure_auto=1 \
+      --set-ctrl=exposure_absolute=250 \
+      --set-ctrl=gain=128
+    echo "Configured ${dev} (C930e): zoom=200, manual exposure"
+    break
+  fi
+done
+
 # Detect best MJPEG resolution for a device (must be under MJPG section)
 detect_res() {
   local dev="$1"
@@ -65,7 +78,7 @@ for i in "${!DEVICES[@]}"; do
     gst-launch-1.0 -e \
       v4l2src device="${dev}" \
       ! "image/jpeg,width=${w},height=${h},framerate=30/1" \
-      ! jpegdec ! nvvidconv flip-method=6 ! 'video/x-raw(memory:NVMM)' \
+      ! jpegdec ! nvvidconv flip-method=2 ! 'video/x-raw(memory:NVMM)' \
       ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
       ! h264parse ! mux. \
       alsasrc device=hw:C930e,0 provide-clock=false slave-method=none \
@@ -80,7 +93,7 @@ for i in "${!DEVICES[@]}"; do
     gst-launch-1.0 -e \
       v4l2src device="${dev}" \
       ! "image/jpeg,width=${w},height=${h},framerate=30/1" \
-      ! jpegdec ! nvvidconv flip-method=6 ! 'video/x-raw(memory:NVMM)' \
+      ! jpegdec ! nvvidconv flip-method=2 ! 'video/x-raw(memory:NVMM)' \
       ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
       ! h264parse ! mpegtsmux alignment=7 \
       ! udpsink host="${SRT_TAILSCALE_HOST}" port="${port}" sync=false &
