@@ -22,14 +22,39 @@ fi
 
 echo "Found ${#DEVICES[@]} camera(s): ${DEVICES[*]}"
 
+# Detect best MJPEG resolution for a device
+detect_res() {
+  local dev="$1"
+  local formats
+  formats=$(v4l2-ctl -d "$dev" --list-formats-ext 2>/dev/null)
+
+  for res in 1920x1080 1280x720; do
+    if echo "$formats" | grep -q "${res}"; then
+      echo "$res"
+      return
+    fi
+  done
+
+  echo "none"
+}
+
 PIDS=()
 for i in "${!DEVICES[@]}"; do
   dev="${DEVICES[$i]}"
   port=$((BASE_PORT + i))
-  echo "Streaming ${dev} → udp://${SRT_TAILSCALE_HOST}:${port} ..."
+
+  res=$(detect_res "$dev")
+  if [ "$res" = "none" ]; then
+    echo "Skipping ${dev}: no MJPEG 1080p or 720p support"
+    continue
+  fi
+
+  w=${res%x*}
+  h=${res#*x}
+  echo "Streaming ${dev} (MJPEG ${res}) → udp://${SRT_TAILSCALE_HOST}:${port} ..."
   gst-launch-1.0 -e \
     v4l2src device="${dev}" \
-    ! image/jpeg,width=1920,height=1080,framerate=30/1 \
+    ! "image/jpeg,width=${w},height=${h},framerate=30/1" \
     ! jpegdec ! nvvidconv ! 'video/x-raw(memory:NVMM)' \
     ! nvv4l2h264enc bitrate=8000000 iframeinterval=15 insert-sps-pps=true \
     ! h264parse ! mpegtsmux alignment=7 \
