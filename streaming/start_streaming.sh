@@ -60,31 +60,14 @@ for i in "${!DEVICES[@]}"; do
 
   w=${res%x*}
   h=${res#*x}
-  if [ "$i" -eq 0 ]; then
-    echo "Streaming ${dev} (MJPEG ${res} + audio) → udp://${SRT_TAILSCALE_HOST}:${port} ..."
-    gst-launch-1.0 -e \
-      v4l2src device="${dev}" \
-      ! "image/jpeg,width=${w},height=${h},framerate=30/1" \
-      ! jpegdec ! nvvidconv ! 'video/x-raw(memory:NVMM)' \
-      ! nvv4l2h264enc bitrate=4000000 iframeinterval=2 insert-sps-pps=true \
-      ! h264parse ! mux. \
-      alsasrc device=hw:0,0 \
-      ! audioconvert ! audioresample \
-      ! 'audio/x-raw,rate=48000,channels=1' \
-      ! avenc_aac bitrate=128000 \
-      ! aacparse ! mux. \
-      mpegtsmux name=mux alignment=7 \
-      ! udpsink host="${SRT_TAILSCALE_HOST}" port="${port}" sync=false &
-  else
-    echo "Streaming ${dev} (MJPEG ${res}) → udp://${SRT_TAILSCALE_HOST}:${port} ..."
-    gst-launch-1.0 -e \
-      v4l2src device="${dev}" \
-      ! "image/jpeg,width=${w},height=${h},framerate=30/1" \
-      ! jpegdec ! nvvidconv ! 'video/x-raw(memory:NVMM)' \
-      ! nvv4l2h264enc bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
-      ! h264parse ! mpegtsmux alignment=7 \
-      ! udpsink host="${SRT_TAILSCALE_HOST}" port="${port}" sync=false &
-  fi
+  echo "Streaming ${dev} (MJPEG ${res}) → udp://${SRT_TAILSCALE_HOST}:${port} ..."
+  gst-launch-1.0 -e \
+    v4l2src device="${dev}" \
+    ! "image/jpeg,width=${w},height=${h},framerate=30/1" \
+    ! jpegdec ! nvvidconv ! 'video/x-raw(memory:NVMM)' \
+    ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
+    ! h264parse ! mpegtsmux alignment=7 \
+    ! udpsink host="${SRT_TAILSCALE_HOST}" port="${port}" sync=false &
   PIDS+=($!)
 done
 
