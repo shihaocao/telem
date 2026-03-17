@@ -65,7 +65,7 @@ for i in "${!DEVICES[@]}"; do
     gst-launch-1.0 -e \
       v4l2src device="${dev}" \
       ! "image/jpeg,width=${w},height=${h},framerate=30/1" \
-      ! jpegdec ! nvvidconv flip-method=5 ! 'video/x-raw(memory:NVMM)' \
+      ! jpegdec ! nvvidconv flip-method=4 ! 'video/x-raw(memory:NVMM)' \
       ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
       ! h264parse ! mux. \
       alsasrc device=hw:C930e,0 provide-clock=false slave-method=none \
@@ -80,7 +80,7 @@ for i in "${!DEVICES[@]}"; do
     gst-launch-1.0 -e \
       v4l2src device="${dev}" \
       ! "image/jpeg,width=${w},height=${h},framerate=30/1" \
-      ! jpegdec ! nvvidconv flip-method=5 ! 'video/x-raw(memory:NVMM)' \
+      ! jpegdec ! nvvidconv flip-method=4 ! 'video/x-raw(memory:NVMM)' \
       ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
       ! h264parse ! mpegtsmux alignment=7 \
       ! udpsink host="${SRT_TAILSCALE_HOST}" port="${port}" sync=false &
