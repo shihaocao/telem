@@ -68,7 +68,7 @@ for i in "${!DEVICES[@]}"; do
       ! jpegdec ! nvvidconv ! 'video/x-raw(memory:NVMM)' \
       ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
       ! h264parse ! mux. \
-      alsasrc device=hw:0,0 provide-clock=false slave-method=none \
+      alsasrc device=hw:C930e,0 provide-clock=false slave-method=none \
       ! queue ! audioconvert ! audioresample \
       ! 'audio/x-raw,rate=48000,channels=1' \
       ! voaacenc bitrate=128000 \
