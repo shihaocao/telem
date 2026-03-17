@@ -1,0 +1,14 @@
+[Unit]
+Description=Race video streaming
+After=network.target
+
+[Service]
+Type=simple
+User=gearados
+WorkingDirectory=/home/gearados/repos/telem/streaming
+ExecStart=/home/gearados/repos/telem/streaming/start_streaming.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

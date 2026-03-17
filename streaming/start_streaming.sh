@@ -3,7 +3,7 @@
 # Each camera gets its own port: 9000, 9001, 9002, ...
 set -euo pipefail
 
-export SRT_TAILSCALE_HOST=100.99.198.13
+export TAILSCALE_HOST=100.99.198.13
 BASE_PORT=9000
 
 # Find all video capture devices (skip metadata/control nodes)
@@ -74,7 +74,7 @@ for i in "${!DEVICES[@]}"; do
   w=${res%x*}
   h=${res#*x}
   if [ "$i" -eq 0 ]; then
-    echo "Streaming ${dev} (MJPEG ${res} + audio) → udp://${SRT_TAILSCALE_HOST}:${port} ..."
+    echo "Streaming ${dev} (MJPEG ${res} + audio) → udp://${TAILSCALE_HOST}:${port} ..."
     gst-launch-1.0 -e \
       v4l2src device="${dev}" \
       ! "image/jpeg,width=${w},height=${h},framerate=30/1" \
@@ -87,16 +87,16 @@ for i in "${!DEVICES[@]}"; do
       ! voaacenc bitrate=128000 \
       ! aacparse ! mux. \
       mpegtsmux name=mux alignment=7 \
-      ! udpsink host="${SRT_TAILSCALE_HOST}" port="${port}" sync=false &
+      ! udpsink host="${TAILSCALE_HOST}" port="${port}" sync=false &
   else
-    echo "Streaming ${dev} (MJPEG ${res}) → udp://${SRT_TAILSCALE_HOST}:${port} ..."
+    echo "Streaming ${dev} (MJPEG ${res}) → udp://${TAILSCALE_HOST}:${port} ..."
     gst-launch-1.0 -e \
       v4l2src device="${dev}" \
       ! "image/jpeg,width=${w},height=${h},framerate=30/1" \
       ! jpegdec ! nvvidconv flip-method=2 ! 'video/x-raw(memory:NVMM)' \
       ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
       ! h264parse ! mpegtsmux alignment=7 \
-      ! udpsink host="${SRT_TAILSCALE_HOST}" port="${port}" sync=false &
+      ! udpsink host="${TAILSCALE_HOST}" port="${port}" sync=false &
   fi
   PIDS+=($!)
 done
