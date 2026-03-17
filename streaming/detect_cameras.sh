@@ -14,7 +14,12 @@ echo
 
 for dev in /dev/video*; do
   [ -e "$dev" ] || continue
-  echo "=== $dev ==="
-  v4l2-ctl -d "$dev" --list-formats-ext 2>/dev/null || echo "  (cannot open)"
+  caps=$(v4l2-ctl -d "$dev" --all 2>/dev/null | grep "Device Caps" | head -1 || true)
+  if echo "$caps" | grep -q "Video Capture"; then
+    echo "=== $dev (capture) ==="
+    v4l2-ctl -d "$dev" --list-formats-ext 2>/dev/null || echo "  (cannot open)"
+  else
+    echo "=== $dev (metadata/control — skipped) ==="
+  fi
   echo
 done
