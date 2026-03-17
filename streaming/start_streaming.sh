@@ -28,8 +28,8 @@ for dev in "${DEVICES[@]}"; do
     v4l2-ctl -d "$dev" \
       --set-ctrl=zoom_absolute=200 \
       --set-ctrl=exposure_auto=1 \
-      --set-ctrl=exposure_absolute=250 \
-      --set-ctrl=gain=128
+      --set-ctrl=exposure_absolute=10 \
+      --set-ctrl=gain=0
     echo "Configured ${dev} (C930e): zoom=200, manual exposure"
     break
   fi
