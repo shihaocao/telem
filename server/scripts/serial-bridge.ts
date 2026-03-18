@@ -94,7 +94,6 @@ async function main() {
   const rl = createInterface({ input: stream });
 
   rl.on("line", async (line) => {
-    console.log(line)
     const parts = line.trim().split(/\s+/);
     if (parts.length !== 3) return;
 
