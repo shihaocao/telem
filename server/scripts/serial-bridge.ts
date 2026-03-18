@@ -32,7 +32,8 @@
  */
 
 import { createInterface } from "readline";
-import { open } from "fs/promises";
+import { createReadStream } from "fs";
+import { execSync } from "child_process";
 
 const SERIAL_PORT = process.argv[2] || "/dev/ttyACM0";
 const INGEST_URL = process.env.INGEST_URL || "http://localhost:4400/ingest";
@@ -87,11 +88,13 @@ function ectToTempC(v: number): number {
 async function main() {
   console.log(`serial-bridge: ${SERIAL_PORT} → ${INGEST_URL}`);
 
-  const fd = await open(SERIAL_PORT, "r");
-  const stream = fd.createReadStream({ encoding: "utf-8" });
+  execSync(`stty -F ${SERIAL_PORT} 115200 raw -echo`);
+
+  const stream = createReadStream(SERIAL_PORT, { encoding: "utf-8" });
   const rl = createInterface({ input: stream });
 
   rl.on("line", async (line) => {
+    console.log(line)
     const parts = line.trim().split(/\s+/);
     if (parts.length !== 3) return;
 
