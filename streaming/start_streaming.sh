@@ -108,10 +108,10 @@ done
 # Apply C930e settings after pipelines open the device
 if [ -n "$C930E_DEV" ]; then
   (sleep 3 && v4l2-ctl -d "$C930E_DEV" \
-    --set-ctrl=zoom_absolute=120 \
+    --set-ctrl=zoom_absolute=100 \
     --set-ctrl=exposure_auto=3 \
     --set-ctrl=backlight_compensation=0 \
-    --set-ctrl=brightness=160 \
+    --set-ctrl=brightness=100 \
     && echo "Applied C930e settings") &
   PIDS+=($!)
 fi
