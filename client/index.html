@@ -10,7 +10,11 @@
     <div class="header-left">
       <span class="title">MAGICARP MOTORS</span>
       <span class="title-jp">作戦遠隔測定</span>
-      <span class="title-sub">SONOMA RACEWAY // 1992 ACCORD EX</span>
+      <select id="track-select">
+        <option value="sonoma">SONOMA RACEWAY</option>
+        <option value="sf_block">SHARON BLOCK</option>
+      </select>
+      <span class="title-sub">1992 ACCORD EX</span>
     </div>
     <div class="status-group">
       <span class="stat">latency <b id="stat-latency">--</b></span>
@@ -19,6 +23,7 @@
       <span class="stat">rate <b id="stat-rate">--</b></span>
       <span id="connection-status" class="disconnected">DISCONNECTED</span>
       <a href="/debug.html" id="debug-link">DEBUG</a>
+      <a href="/editor.html" id="debug-link">EDITOR</a>
     </div>
   </header>
   <main id="dashboard">

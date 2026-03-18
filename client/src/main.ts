@@ -87,6 +87,17 @@ let gcircle: GCirclePanel;
 let diag: DiagPanel;
 
 function init() {
+  // track selector
+  const trackSelect = document.getElementById("track-select") as HTMLSelectElement;
+  const params = new URLSearchParams(window.location.search);
+  const currentTrack = params.get("track") ?? "sonoma";
+  trackSelect.value = currentTrack;
+  trackSelect.addEventListener("change", () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("track", trackSelect.value);
+    window.location.href = url.toString();
+  });
+
   panels = createPanels(mgr);
   maps = createMaps(
     document.getElementById("map-follow")!,

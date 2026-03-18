@@ -2,7 +2,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet-rotate";
 import { TelemetryManager } from "./telemetry";
-import { SONOMA_TRACK, TRACK_CENTER, TRACK_ZOOM, FINISH_LINE, TURNS } from "./track";
+import { getActiveTrack } from "./track";
 
 const TRAIL_MAX = 3000;
 const TRAIL_COLOR = "#ff6b35";
@@ -14,16 +14,14 @@ const TILES = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
 const TILES_NOLABELS = "https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png";
 const TILE_OPTS: L.TileLayerOptions = { maxZoom: 20, subdomains: "abcd" };
 
-const TRACK_BEARING = -35;
-
-/** Snap a point to the nearest position on the track centerline. */
-function snapToTrack(lat: number, lon: number): [number, number] {
+/** Snap a point to the nearest position on a track centerline. */
+function snapToTrack(trackPts: [number, number][], lat: number, lon: number): [number, number] {
   let bestDist = Infinity;
   let bestPt: [number, number] = [lat, lon];
 
-  for (let i = 0; i < SONOMA_TRACK.length - 1; i++) {
-    const [aLat, aLon] = SONOMA_TRACK[i];
-    const [bLat, bLon] = SONOMA_TRACK[i + 1];
+  for (let i = 0; i < trackPts.length - 1; i++) {
+    const [aLat, aLon] = trackPts[i];
+    const [bLat, bLon] = trackPts[i + 1];
 
     // project point onto segment [a, b]
     const dx = bLon - aLon;
@@ -133,6 +131,8 @@ export function createMaps(
   overviewEl: HTMLElement,
   mgr: TelemetryManager,
 ): MapPanels {
+  const trackDef = getActiveTrack();
+
   // --- Follow map (current GPS position) ---
   const followMap = L.map(followEl, {
     zoomControl: false,
@@ -169,24 +169,24 @@ export function createMaps(
     touchZoom: false,
     boxZoom: false,
     keyboard: false,
-    minZoom: TRACK_ZOOM,
-    maxZoom: TRACK_ZOOM,
+    minZoom: trackDef.zoom,
+    maxZoom: trackDef.zoom,
     rotate: true,
     rotateControl: false,
     shiftKeyRotate: false,
-    bearing: TRACK_BEARING,
-  } as any).setView(TRACK_CENTER, TRACK_ZOOM);
+    bearing: trackDef.bearing,
+  } as any).setView(trackDef.center, trackDef.zoom);
   L.tileLayer(TILES_NOLABELS, TILE_OPTS).addTo(overviewMap);
 
   // track outline
-  L.polyline(SONOMA_TRACK as L.LatLngExpression[], {
+  L.polyline(trackDef.track as L.LatLngExpression[], {
     color: TRACK_OUTLINE_COLOR,
     weight: 1.2,
     dashArray: "4 4",
   }).addTo(overviewMap);
 
   // start/finish marker
-  L.marker(FINISH_LINE, {
+  L.marker(trackDef.finishLine, {
     icon: L.divIcon({
       className: "turn-label sf-label",
       html: "S/F",
@@ -197,7 +197,7 @@ export function createMaps(
   }).addTo(overviewMap);
 
   // turn labels
-  for (const t of TURNS) {
+  for (const t of trackDef.turns) {
     L.marker(t.pos, {
       icon: L.divIcon({
         className: "turn-label",
@@ -281,9 +281,9 @@ export function createMaps(
     }
 
     // --- update overview map (snap GPS to track centerline) ---
-    const snappedCoords = coords.map(([la, lo]) => snapToTrack(la, lo));
+    const snappedCoords = coords.map(([la, lo]) => snapToTrack(trackDef.track, la, lo));
     overviewTrailSegments = buildSpeedTrail(overviewMap, snappedCoords, speeds, overviewTrailSegments);
-    const [sLat, sLon] = snapToTrack(lat, lon);
+    const [sLat, sLon] = snapToTrack(trackDef.track, lat, lon);
     overviewMarker.setLatLng([sLat, sLon]);
     if (!overviewMap.hasLayer(overviewMarker)) {
       overviewMarker.addTo(overviewMap);

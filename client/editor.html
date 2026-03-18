@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TRACK EDITOR</title>
+</head>
+<body>
+  <header id="status-bar">
+    <div class="header-left">
+      <span class="title">TRACK EDITOR</span>
+      <span class="title-jp">軌道編集</span>
+    </div>
+    <div class="status-group">
+      <select id="track-load"></select>
+      <button id="btn-save">SAVE</button>
+      <button id="btn-download">DOWNLOAD</button>
+      <a href="/" id="back-link">DASHBOARD</a>
+    </div>
+  </header>
+  <div id="editor-body">
+    <div id="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">MODE</div>
+        <div id="mode-buttons">
+          <button class="mode-btn active" data-mode="track">TRACK</button>
+          <button class="mode-btn" data-mode="turn">TURN</button>
+          <button class="mode-btn" data-mode="finish">S/F</button>
+          <button class="mode-btn" data-mode="select">SELECT</button>
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">TRACK NAME</div>
+        <input id="input-name" type="text" value="New Track" />
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">ZOOM</div>
+        <input id="input-zoom" type="number" value="16" step="0.5" min="10" max="20" />
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">BEARING</div>
+        <input id="input-bearing" type="number" value="0" step="5" min="-180" max="180" />
+      </div>
+      <div class="sidebar-section">
+        <button id="btn-set-center">SET CENTER TO VIEW</button>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">POINTS <span id="point-count">0</span></div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">TURNS</div>
+        <div id="turn-list"></div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">S/F LINE</div>
+        <div id="finish-info">--</div>
+      </div>
+      <div class="sidebar-section">
+        <button id="btn-clear" class="danger">CLEAR ALL</button>
+        <button id="btn-undo">UNDO (Z)</button>
+      </div>
+    </div>
+    <div id="map-container"></div>
+  </div>
+  <script type="module" src="/src/editor.ts"></script>
+</body>
+</html>

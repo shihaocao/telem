@@ -1,0 +1,340 @@
+:root {
+  --bg: #0a0a0a;
+  --panel-bg: #0d0d12;
+  --border: rgba(255, 255, 255, 0.06);
+  --border-bright: rgba(255, 255, 255, 0.12);
+  --accent: #ff6b35;
+  --accent-dim: rgba(255, 107, 53, 0.5);
+  --red: #e74c3c;
+  --green: #2ecc71;
+  --text: #999;
+  --text-bright: #eee;
+  --text-dim: rgba(255, 255, 255, 0.2);
+  --font: "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* scan lines */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px);
+}
+
+/* ── Header ── */
+#status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 16px;
+  background: #060608;
+  border-bottom: 1px solid var(--border-bright);
+  flex-shrink: 0;
+  position: relative;
+}
+
+#status-bar::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent 0%, var(--accent) 20%, var(--accent) 80%, transparent 100%);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.title {
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 3px;
+  color: var(--accent);
+  text-shadow: 0 0 10px rgba(255,107,53,0.4);
+}
+
+.title-jp {
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: var(--text-dim);
+}
+
+.status-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#track-load {
+  background: transparent;
+  border: 1px solid rgba(255,107,53,0.25);
+  color: var(--accent);
+  font-family: var(--font);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  padding: 3px 8px;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+#track-load option {
+  background: #0d0d12;
+  color: var(--accent);
+}
+
+#back-link {
+  color: rgba(255,255,255,0.25);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-decoration: none;
+  border: 1px solid rgba(255,255,255,0.1);
+  padding: 3px 8px;
+}
+
+#back-link:hover { color: var(--text-bright); border-color: rgba(255,255,255,0.3); }
+
+/* ── Header buttons ── */
+#btn-save, #btn-download {
+  background: transparent;
+  border: 1px solid rgba(255,107,53,0.3);
+  color: var(--accent);
+  font-family: var(--font);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+#btn-save:hover, #btn-download:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ── Editor body ── */
+#editor-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Sidebar ── */
+#sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--panel-bg);
+  border-right: 1px solid var(--border);
+  padding: 12px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sidebar-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+
+.sidebar-label span {
+  color: var(--text-bright);
+}
+
+#sidebar input[type="text"],
+#sidebar input[type="number"] {
+  background: var(--bg);
+  border: 1px solid var(--border-bright);
+  color: var(--text-bright);
+  font-family: var(--font);
+  font-size: 11px;
+  padding: 4px 8px;
+  width: 100%;
+}
+
+#sidebar input:focus {
+  outline: 1px solid var(--accent-dim);
+}
+
+/* ── Mode buttons ── */
+#mode-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.mode-btn {
+  background: transparent;
+  border: 1px solid var(--border-bright);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 5px;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
+.mode-btn:hover {
+  border-color: var(--accent-dim);
+  color: var(--text-bright);
+}
+
+.mode-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* ── Turn list ── */
+.turn-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  color: var(--text);
+  padding: 2px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.turn-name {
+  background: var(--bg);
+  border: 1px solid var(--border-bright);
+  color: var(--accent);
+  font-family: var(--font);
+  font-size: 9px;
+  font-weight: 700;
+  width: 32px;
+  padding: 1px 4px;
+  text-align: center;
+}
+
+.turn-name:focus {
+  outline: 1px solid var(--accent-dim);
+}
+
+.turn-pos {
+  flex: 1;
+  color: var(--text-dim);
+  font-size: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turn-del {
+  background: transparent;
+  border: none;
+  color: var(--red);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 4px;
+  font-family: var(--font);
+}
+
+.turn-del:hover { color: #fff; }
+
+/* ── Sidebar action buttons ── */
+#btn-set-center, #btn-undo {
+  background: transparent;
+  border: 1px solid var(--border-bright);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 5px 8px;
+  cursor: pointer;
+  width: 100%;
+}
+
+#btn-set-center:hover, #btn-undo:hover {
+  border-color: var(--accent-dim);
+  color: var(--text-bright);
+}
+
+#btn-clear {
+  background: transparent;
+  border: 1px solid var(--red);
+  color: var(--red);
+  font-family: var(--font);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 5px 8px;
+  cursor: pointer;
+  width: 100%;
+}
+
+#btn-clear:hover { background: var(--red); color: #fff; }
+
+/* ── Map ── */
+#map-container {
+  flex: 1;
+  min-width: 0;
+}
+
+.leaflet-container {
+  background: var(--panel-bg) !important;
+}
+
+.leaflet-tile-pane {
+  filter: saturate(0.3) brightness(0.6);
+}
+
+.leaflet-control-attribution { display: none !important; }
+
+.leaflet-bar,
+.leaflet-bar a,
+.leaflet-control {
+  background: var(--panel-bg) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+  box-shadow: none !important;
+}
+
+.leaflet-bar a:hover {
+  background: #1a1a24 !important;
+  color: var(--text-bright) !important;
+}
+
+.leaflet-container,
+.leaflet-container *,
+.leaflet-container:focus,
+.leaflet-container *:focus {
+  outline: none !important;
+}
+
+#finish-info {
+  font-size: 10px;
+  color: var(--text);
+}
