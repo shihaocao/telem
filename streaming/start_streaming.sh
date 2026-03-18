@@ -22,15 +22,6 @@ fi
 
 echo "Found ${#DEVICES[@]} camera(s): ${DEVICES[*]}"
 
-# Find C930e device
-C930E_DEV=""
-for dev in "${DEVICES[@]}"; do
-  if v4l2-ctl -d "$dev" --all 2>/dev/null | grep -q "C930e"; then
-    C930E_DEV="$dev"
-    break
-  fi
-done
-
 # Detect best MJPEG resolution for a device (must be under MJPG section)
 detect_res() {
   local dev="$1"
@@ -69,15 +60,9 @@ for i in "${!DEVICES[@]}"; do
 
   w=${res%x*}
   h=${res#*x}
-  # Set extra-controls for C930e
-  V4L2_EXTRA=""
-  if [ "$dev" = "$C930E_DEV" ]; then
-    V4L2_EXTRA='extra-controls="s,zoom_absolute=150,exposure_auto=1,exposure_absolute=20,gain=0"'
-  fi
-
   echo "Streaming ${dev} (MJPEG ${res}) → rtp://${TAILSCALE_HOST}:${port} ..."
   gst-launch-1.0 -e \
-    v4l2src device="${dev}" ${V4L2_EXTRA} \
+    v4l2src device="${dev}" \
     ! "image/jpeg,width=${w},height=${h},framerate=30/1" \
     ! jpegdec ! nvvidconv flip-method=2 ! 'video/x-raw(memory:NVMM)' \
     ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
@@ -85,6 +70,16 @@ for i in "${!DEVICES[@]}"; do
     ! udpsink host="${TAILSCALE_HOST}" port="${port}" sync=false &
   PIDS+=($!)
 done
+
+# Separate audio stream from C930e mic
+AUDIO_PORT=$((BASE_PORT + ${#DEVICES[@]}))
+echo "Streaming audio (C930e) → udp://${TAILSCALE_HOST}:${AUDIO_PORT} ..."
+gst-launch-1.0 -e \
+  alsasrc device=hw:C930e,0 \
+  ! audioconvert ! audioresample \
+  ! 'audio/x-raw,format=S16LE,rate=48000,channels=1' \
+  ! udpsink host="${TAILSCALE_HOST}" port="${AUDIO_PORT}" sync=false &
+PIDS+=($!)
 
 echo "All streams started. PIDs: ${PIDS[*]}"
 echo "Press Ctrl+C to stop all."
