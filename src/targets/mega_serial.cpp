@@ -15,9 +15,6 @@ constexpr int PIN_MAP = A7;
 constexpr float VREF = 5.0f;
 constexpr float ADC_MAX = 1023.0f;
 
-elapsedMillis blink_timer;
-elapsedMillis telemetry_timer;
-
 void setup() {
     pinMode(LED_PIN, OUTPUT);
     pinMode(PIN_ECT, INPUT);
@@ -29,13 +26,17 @@ void setup() {
 }
 
 void loop() {
-    if (blink_timer >= BLINK_PERIOD_MS) {
-        blink_timer = 0;
+    static uint32_t last_blink = 0;
+    static uint32_t last_telem = 0;
+    uint32_t now = millis();
+
+    if (now - last_blink >= BLINK_PERIOD_MS) {
+        last_blink = now;
         digitalWrite(LED_PIN, !digitalRead(LED_PIN));
     }
 
-    if (telemetry_timer >= TELEMETRY_PERIOD_MS) {
-        telemetry_timer = 0;
+    if (now - last_telem >= TELEMETRY_PERIOD_MS) {
+        last_telem = now;
 
         float ect = analogRead(PIN_ECT) * (VREF / ADC_MAX);
         float tps = analogRead(PIN_TPS) * (VREF / ADC_MAX);
