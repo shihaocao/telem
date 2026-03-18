@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Telemetry Debug</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0d0d1a;
+      color: #ccc;
+      font-family: "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 13px;
+      padding: 16px;
+    }
+    h1 {
+      font-size: 14px;
+      letter-spacing: 2px;
+      color: #eee;
+      margin-bottom: 16px;
+    }
+    #status {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      margin-left: 16px;
+      color: #e74c3c;
+    }
+    #status.live { color: #2ecc71; }
+    #nuke-btn {
+      background: transparent;
+      border: 1px solid #e74c3c;
+      color: #e74c3c;
+      font-family: inherit;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      padding: 3px 10px;
+      border-radius: 3px;
+      cursor: pointer;
+      text-transform: uppercase;
+      margin-left: 12px;
+    }
+    #nuke-btn:hover { background: #e74c3c; color: #fff; }
+    #back-link {
+      color: #666;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-decoration: none;
+      margin-left: 12px;
+    }
+    #back-link:hover { color: #ccc; }
+    #channels {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 8px;
+    }
+    .ch {
+      background: #13132a;
+      border: 1px solid #1e1e3a;
+      border-radius: 4px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .ch-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .ch-name {
+      font-size: 11px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.4);
+      letter-spacing: 1px;
+    }
+    .ch-value {
+      font-size: 20px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .ch-canvas {
+      width: 100%;
+      height: 40px;
+    }
+  </style>
+</head>
+<body>
+  <h1>TELEMETRY DEBUG <span id="status">DISCONNECTED</span> <button id="nuke-btn">NUKE</button> <a href="/" id="back-link">DASHBOARD</a></h1>
+  <div id="channels"></div>
+  <script type="module">
+    const SERVER_URL = (import.meta.env.VITE_SERVER_URL ?? "http://gearados-nx.tail62d295.ts.net:4400").replace(/\/$/, "");
+    const MAX_PTS = 200;
+    const container = document.getElementById("channels");
+    const statusEl = document.getElementById("status");
+
+    const channels = new Map();
+
+    function getOrCreate(name) {
+      if (channels.has(name)) return channels.get(name);
+
+      const el = document.createElement("div");
+      el.className = "ch";
+      el.innerHTML = `
+        <div class="ch-header">
+          <span class="ch-name">${name}</span>
+          <span class="ch-value">--</span>
+        </div>
+        <canvas class="ch-canvas"></canvas>
+      `;
+      container.appendChild(el);
+
+      const canvas = el.querySelector("canvas");
+      const ctx = canvas.getContext("2d");
+      const ch = {
+        el,
+        valueEl: el.querySelector(".ch-value"),
+        canvas,
+        ctx,
+        values: [],
+      };
+      channels.set(name, ch);
+      return ch;
+    }
+
+    function drawSparkline(ch) {
+      const { canvas, ctx, values } = ch;
+      const dpr = window.devicePixelRatio || 1;
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+
+      if (values.length < 2) return;
+
+      let min = Infinity, max = -Infinity;
+      for (const v of values) {
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+      const range = max - min || 1;
+      const pad = range * 0.1;
+
+      ctx.beginPath();
+      for (let i = 0; i < values.length; i++) {
+        const x = (i / (values.length - 1)) * w;
+        const y = h - ((values[i] - min + pad) / (range + pad * 2)) * h;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = "rgba(52, 152, 219, 0.7)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+
+    function connect() {
+      statusEl.textContent = "CONNECTING";
+      statusEl.className = "";
+
+      const es = new EventSource(`${SERVER_URL}/stream?history=false`);
+
+      es.addEventListener("entry", (e) => {
+        const { channel, value } = JSON.parse(e.data);
+        if (typeof value !== "number") return;
+
+        const ch = getOrCreate(channel);
+        ch.values.push(value);
+        if (ch.values.length > MAX_PTS) ch.values.shift();
+        ch.valueEl.textContent = value.toFixed(3);
+        drawSparkline(ch);
+      });
+
+      es.addEventListener("caught_up", () => {
+        statusEl.textContent = "LIVE";
+        statusEl.className = "live";
+      });
+
+      es.onerror = () => {
+        es.close();
+        statusEl.textContent = "DISCONNECTED";
+        statusEl.className = "";
+        setTimeout(connect, 2000);
+      };
+    }
+
+    document.getElementById("nuke-btn").addEventListener("click", async () => {
+      if (!confirm("Clear all telemetry data on the server?")) return;
+      try {
+        await fetch(`${SERVER_URL}/nuke`, { method: "POST" });
+        window.location.reload();
+      } catch (err) {
+        console.error("nuke failed:", err.message);
+      }
+    });
+
+    connect();
+  </script>
+</body>
+</html>

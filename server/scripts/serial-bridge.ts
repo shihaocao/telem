@@ -108,6 +108,9 @@ async function main() {
       { channel: "coolant_temp", value: Math.round(ectToTempC(ectV) * 10) / 10 },   // °C
       { channel: "throttle_pos", value: Math.round(tpsToPercent(tpsV) * 10) / 10 },  // %
       { channel: "manifold_pressure", value: Math.round(mapToKpa(mapV) * 10) / 10 }, // kPa
+      { channel: "ect_voltage", value: Math.round(ectV * 1000) / 1000 },             // V
+      { channel: "tps_voltage", value: Math.round(tpsV * 1000) / 1000 },             // V
+      { channel: "map_voltage", value: Math.round(mapV * 1000) / 1000 },             // V
     ];
 
     try {
