@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Stream all webcams from Jetson to Mac over UDP
-# Each camera gets its own port: 9000, 9001, 9002, ...
+# Stream all webcams + audio from Jetson to Mac over SRT (MPEG-TS)
+# Each camera gets its own port: 9000, 9001, ...
+# Audio is muxed into the first stream
 set -euo pipefail
 
 export TAILSCALE_HOST=100.99.198.13
 BASE_PORT=9000
+SRT_LATENCY=100
 
 # Find all video capture devices (skip metadata/control nodes)
 DEVICES=()
@@ -48,9 +50,10 @@ detect_res() {
 }
 
 PIDS=()
+STREAM_COUNT=0
 for i in "${!DEVICES[@]}"; do
   dev="${DEVICES[$i]}"
-  port=$((BASE_PORT + i * 2))
+  port=$((BASE_PORT + STREAM_COUNT))
 
   res=$(detect_res "$dev")
   if [ "$res" = "none" ]; then
@@ -60,26 +63,37 @@ for i in "${!DEVICES[@]}"; do
 
   w=${res%x*}
   h=${res#*x}
-  echo "Streaming ${dev} (MJPEG ${res}) → rtp://${TAILSCALE_HOST}:${port} ..."
-  gst-launch-1.0 -e \
-    v4l2src device="${dev}" \
-    ! "image/jpeg,width=${w},height=${h},framerate=30/1" \
-    ! jpegdec ! nvvidconv flip-method=2 ! 'video/x-raw(memory:NVMM)' \
-    ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
-    ! h264parse config-interval=1 ! rtph264pay \
-    ! udpsink host="${TAILSCALE_HOST}" port="${port}" sync=false &
-  PIDS+=($!)
-done
 
-# Separate audio stream from C930e mic
-AUDIO_PORT=$((BASE_PORT + ${#DEVICES[@]} * 2))
-echo "Streaming audio (C930e) → udp://${TAILSCALE_HOST}:${AUDIO_PORT} ..."
-gst-launch-1.0 -e \
-  alsasrc device=hw:C930e,0 buffer-time=20000 latency-time=10000 \
-  ! audioconvert ! audioresample \
-  ! 'audio/x-raw,format=S16LE,rate=48000,channels=1' \
-  ! udpsink host="${TAILSCALE_HOST}" port="${AUDIO_PORT}" sync=false &
-PIDS+=($!)
+  if [ "$STREAM_COUNT" -eq 0 ]; then
+    # First stream: video + audio muxed
+    echo "Streaming ${dev} (MJPEG ${res} + audio) → srt://${TAILSCALE_HOST}:${port} ..."
+    gst-launch-1.0 -e \
+      v4l2src device="${dev}" \
+      ! "image/jpeg,width=${w},height=${h},framerate=30/1" \
+      ! jpegdec ! nvvidconv flip-method=2 ! 'video/x-raw(memory:NVMM)' \
+      ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
+      ! h264parse ! mux. \
+      alsasrc device=hw:C930e,0 buffer-time=20000 latency-time=10000 \
+      ! queue ! audioconvert ! audioresample \
+      ! 'audio/x-raw,rate=48000,channels=1' \
+      ! voaacenc bitrate=128000 \
+      ! aacparse ! mux. \
+      mpegtsmux name=mux latency=${SRT_LATENCY}000000 \
+      ! srtsink uri="srt://${TAILSCALE_HOST}:${port}?mode=caller" latency=${SRT_LATENCY} sync=false &
+  else
+    # Subsequent streams: video only
+    echo "Streaming ${dev} (MJPEG ${res}) → srt://${TAILSCALE_HOST}:${port} ..."
+    gst-launch-1.0 -e \
+      v4l2src device="${dev}" \
+      ! "image/jpeg,width=${w},height=${h},framerate=30/1" \
+      ! jpegdec ! nvvidconv flip-method=2 ! 'video/x-raw(memory:NVMM)' \
+      ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
+      ! h264parse ! mpegtsmux latency=${SRT_LATENCY}000000 \
+      ! srtsink uri="srt://${TAILSCALE_HOST}:${port}?mode=caller" latency=${SRT_LATENCY} sync=false &
+  fi
+  PIDS+=($!)
+  STREAM_COUNT=$((STREAM_COUNT + 1))
+done
 
 echo "All streams started. PIDs: ${PIDS[*]}"
 echo "Press Ctrl+C to stop all."
