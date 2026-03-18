@@ -78,7 +78,7 @@ for i in "${!DEVICES[@]}"; do
       ! 'audio/x-raw,rate=48000,channels=1' \
       ! voaacenc bitrate=128000 \
       ! aacparse ! mux. \
-      mpegtsmux name=mux latency=${SRT_LATENCY}000000 \
+      mpegtsmux name=mux \
       ! srtsink uri="srt://${TAILSCALE_HOST}:${port}?mode=caller" latency=${SRT_LATENCY} sync=false &
   else
     # Subsequent streams: video only
@@ -88,7 +88,7 @@ for i in "${!DEVICES[@]}"; do
       ! "image/jpeg,width=${w},height=${h},framerate=30/1" \
       ! jpegdec ! nvvidconv flip-method=2 ! 'video/x-raw(memory:NVMM)' \
       ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
-      ! h264parse ! mpegtsmux latency=${SRT_LATENCY}000000 \
+      ! h264parse ! mpegtsmux \
       ! srtsink uri="srt://${TAILSCALE_HOST}:${port}?mode=caller" latency=${SRT_LATENCY} sync=false &
   fi
   PIDS+=($!)
