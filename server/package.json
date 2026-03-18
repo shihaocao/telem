@@ -9,6 +9,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "gen-data": "tsx scripts/gen-data.ts",
+    "serial-bridge": "tsx scripts/serial-bridge.ts",
     "nuke": "rm -rf data/wal data/snapshots"
   },
   "devDependencies": {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-SERVICES=(racebox-connect telem-server racebox-bridge video-streaming)
+SERVICES=(racebox-connect telem-server racebox-bridge serial-bridge video-streaming)
 
 for svc in "${SERVICES[@]}"; do
   state=$(systemctl is-active "$svc.service" 2>/dev/null)
@@ -18,4 +18,4 @@ echo "tail logs:"
 for svc in "${SERVICES[@]}"; do
   echo "  journalctl -u $svc.service -f"
 done
-echo "  journalctl -u racebox-connect -u telem-server -u racebox-bridge -u video-streaming -f  # all"
+echo "  journalctl -u racebox-connect -u telem-server -u racebox-bridge -u serial-bridge -u video-streaming -f  # all"

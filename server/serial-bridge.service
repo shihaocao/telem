@@ -1,0 +1,16 @@
+[Unit]
+Description=Arduino serial to telemetry bridge
+After=telem-server.service
+Wants=telem-server.service
+
+[Service]
+Type=simple
+User=gearados
+WorkingDirectory=/home/gearados/repos/telem/server
+ExecStart=/bin/bash -c 'source /home/gearados/.nvm/nvm.sh && exec npx tsx scripts/serial-bridge.ts /dev/ttyACM0'
+Environment=INGEST_URL=http://localhost:4400/ingest
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
