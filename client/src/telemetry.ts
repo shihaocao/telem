@@ -13,6 +13,7 @@ export class TelemetryManager {
   private _dirty = false;
   private retryDelay = 1000;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private staleTimer: ReturnType<typeof setTimeout> | null = null;
 
   onStateChange: ((state: ConnectionState) => void) | null = null;
 
@@ -51,7 +52,8 @@ export class TelemetryManager {
 
     es.addEventListener("caught_up", () => {
       this.setState("live");
-      this.retryDelay = 1000; // reset backoff
+      this.retryDelay = 1000;
+      this.resetStaleTimer();
     });
 
     es.onerror = () => {
@@ -74,6 +76,10 @@ export class TelemetryManager {
     if (this.es) {
       this.es.close();
       this.es = null;
+    }
+    if (this.staleTimer) {
+      clearTimeout(this.staleTimer);
+      this.staleTimer = null;
     }
   }
 
@@ -113,5 +119,17 @@ export class TelemetryManager {
     }
 
     this._dirty = true;
+    this.resetStaleTimer();
+  }
+
+  private resetStaleTimer(): void {
+    if (this.staleTimer) clearTimeout(this.staleTimer);
+    this.staleTimer = setTimeout(() => {
+      if (this._state === "live") {
+        this.setState("disconnected");
+        this.cleanup();
+        this.scheduleReconnect();
+      }
+    }, 5000);
   }
 }
