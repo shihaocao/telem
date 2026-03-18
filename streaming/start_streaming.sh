@@ -83,10 +83,10 @@ for i in "${!DEVICES[@]}"; do
       ! jpegdec ! nvvidconv flip-method=2 ! 'video/x-raw(memory:NVMM)' \
       ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
       ! h264parse ! mux. \
-      alsasrc device=hw:C930e,0 buffer-time=20000 latency-time=10000 \
+      alsasrc device=hw:C930e,0 \
       ! queue ! audioconvert ! audioresample \
       ! 'audio/x-raw,rate=48000,channels=1' \
-      ! voaacenc bitrate=128000 \
+      ! voaacenc bitrate=64000 \
       ! aacparse ! mux. \
       mpegtsmux name=mux alignment=7 \
       ! srtsink uri="srt://${TAILSCALE_HOST}:${port}?mode=caller" latency=${SRT_LATENCY} sync=false &
@@ -109,9 +109,8 @@ done
 if [ -n "$C930E_DEV" ]; then
   (sleep 3 && v4l2-ctl -d "$C930E_DEV" \
     --set-ctrl=zoom_absolute=150 \
-    --set-ctrl=exposure_auto=1 \
-    --set-ctrl=exposure_absolute=10 \
-    --set-ctrl=gain=0 \
+    --set-ctrl=exposure_auto=3 \
+    --set-ctrl=backlight_compensation=0 \
     && echo "Applied C930e settings") &
   PIDS+=($!)
 fi
