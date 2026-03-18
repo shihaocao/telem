@@ -1,5 +1,3 @@
-import uPlot from "uplot";
-import { ChannelBuffer } from "./types";
 import { TelemetryManager } from "./telemetry";
 
 export interface ChartPanel {
@@ -7,137 +5,77 @@ export interface ChartPanel {
 }
 
 const KMH_TO_MPH = 0.621371;
+const MAX_MPH = 160;
+const MPH_SEGMENTS = 32;
+const TPS_SEGMENTS = 20;
 
-function buildSparklineOpts(width: number, height: number): uPlot.Options {
-  return {
-    width,
-    height,
-    cursor: { show: false },
-    legend: { show: false },
-    series: [
-      {},
-      {
-        stroke: "rgba(52, 152, 219, 0.6)",
-        width: 2,
-        fill: "rgba(52, 152, 219, 0.1)",
-        points: { show: false },
-      },
-      {
-        stroke: "rgba(46, 204, 113, 0.45)",
-        width: 1.5,
-        points: { show: false },
-      },
-    ],
-    axes: [
-      { show: false },
-      { show: false },
-    ],
-    scales: {
-      x: { time: false },
-      y: { range: () => [0, 220] as uPlot.Range.MinMax },
-    },
-  };
+function createSegments(count: number, className: string): HTMLElement {
+  const track = document.createElement("div");
+  track.className = "seg-track";
+  for (let i = 0; i < count; i++) {
+    const seg = document.createElement("div");
+    seg.className = `seg ${className}`;
+    track.appendChild(seg);
+  }
+  return track;
 }
 
-function buildData(
-  channels: string[],
-  mgr: TelemetryManager,
-): uPlot.AlignedData {
-  let bestBuf: ChannelBuffer | undefined;
-  for (const ch of channels) {
-    const b = mgr.getBuffer(ch);
-    if (b && (!bestBuf || b.timestamps.length > bestBuf.timestamps.length)) {
-      bestBuf = b;
-    }
+function updateSegments(track: HTMLElement, fraction: number): void {
+  const segs = track.children;
+  const lit = Math.round(fraction * segs.length);
+  for (let i = 0; i < segs.length; i++) {
+    segs[i].classList.toggle("seg-on", i < lit);
   }
-
-  if (!bestBuf || bestBuf.timestamps.length === 0) {
-    const empty: number[] = [];
-    const result: uPlot.AlignedData = [empty];
-    for (let i = 0; i < channels.length; i++) result.push(empty);
-    return result;
-  }
-
-  const xs = bestBuf.timestamps;
-  const data: uPlot.AlignedData = [xs];
-
-  for (const ch of channels) {
-    const buf = mgr.getBuffer(ch);
-    if (!buf || buf.values.length === 0) {
-      data.push(new Array(xs.length).fill(null) as any);
-    } else if (buf.values.length === xs.length) {
-      // convert km/h to mph for display
-      data.push(buf.values.map((v) => v * KMH_TO_MPH));
-    } else {
-      const pad = xs.length - buf.values.length;
-      const padded = new Array(pad).fill(null).concat(
-        buf.values.map((v) => v * KMH_TO_MPH),
-      );
-      data.push(padded as any);
-    }
-  }
-
-  return data;
 }
 
 export function createPanels(mgr: TelemetryManager): ChartPanel[] {
   const container = document.getElementById("chart-speed")!;
 
-  // speed overlay
-  const overlay = document.createElement("div");
-  overlay.className = "speed-overlay";
-  overlay.innerHTML = `<span class="speed-value">--</span><span class="speed-unit">MPH</span>`;
-  container.appendChild(overlay);
+  container.innerHTML = `
+    <div class="gauges-container">
+      <div class="gauge">
+        <div class="gauge-header">
+          <span class="gauge-value" id="gauge-mph">--</span>
+          <span class="gauge-unit">MPH</span>
+        </div>
+      </div>
+      <div class="gauge">
+        <div class="gauge-header">
+          <span class="gauge-value" id="gauge-tps">--</span>
+          <span class="gauge-unit">% TPS</span>
+        </div>
+      </div>
+    </div>
+  `;
 
-  // throttle bar
-  const throttleBar = document.createElement("div");
-  throttleBar.className = "throttle-bar-container";
-  throttleBar.innerHTML = `<div class="throttle-bar-fill"></div>`;
-  container.appendChild(throttleBar);
-  const throttleFill = throttleBar.querySelector(".throttle-bar-fill") as HTMLElement;
+  const gauges = container.querySelectorAll(".gauge");
 
-  const throttleLabel = document.createElement("div");
-  throttleLabel.className = "throttle-label";
-  throttleLabel.textContent = "TPS --%";
-  container.appendChild(throttleLabel);
+  const mphTrack = createSegments(MPH_SEGMENTS, "seg-speed");
+  gauges[0].appendChild(mphTrack);
 
-  const rect = container.getBoundingClientRect();
-  const channels = ["speed", "gps_speed"];
-  const opts = buildSparklineOpts(rect.width, rect.height);
-  const chart = new uPlot(opts, [[], [], []], container);
+  const tpsTrack = createSegments(TPS_SEGMENTS, "seg-throttle");
+  gauges[1].appendChild(tpsTrack);
 
-  const valueEl = overlay.querySelector(".speed-value")!;
+  const mphVal = container.querySelector("#gauge-mph") as HTMLElement;
+  const tpsVal = container.querySelector("#gauge-tps") as HTMLElement;
 
   const update = () => {
-    const data = buildData(channels, mgr);
-    chart.setData(data);
-
-    // update big number from gps_speed (preferred) or ecu speed
     const gpsBuf = mgr.getBuffer("gps_speed");
     const ecuBuf = mgr.getBuffer("speed");
     const buf = gpsBuf?.values.length ? gpsBuf : ecuBuf;
     if (buf && buf.values.length > 0) {
       const mph = buf.values[buf.values.length - 1] * KMH_TO_MPH;
-      valueEl.textContent = String(Math.round(mph));
+      mphVal.textContent = String(Math.round(mph));
+      updateSegments(mphTrack, Math.min(1, mph / MAX_MPH));
     }
 
-    // update throttle bar
     const tpsBuf = mgr.getBuffer("throttle_pos");
     if (tpsBuf && tpsBuf.values.length > 0) {
-      const tps = tpsBuf.values[tpsBuf.values.length - 1];
-      const pct = Math.max(0, Math.min(100, tps));
-      throttleFill.style.width = `${pct}%`;
-      throttleLabel.textContent = `TPS ${Math.round(pct)}%`;
+      const tps = Math.max(0, Math.min(100, tpsBuf.values[tpsBuf.values.length - 1]));
+      tpsVal.textContent = String(Math.round(tps));
+      updateSegments(tpsTrack, tps / 100);
     }
   };
-
-  const ro = new ResizeObserver((entries) => {
-    for (const entry of entries) {
-      const { width, height } = entry.contentRect;
-      chart.setSize({ width, height });
-    }
-  });
-  ro.observe(container);
 
   return [{ update }];
 }

@@ -134,13 +134,6 @@ export function createGCircle(
     ctx.textBaseline = "top";
     ctx.fillText(`${mag.toFixed(2)}g`, w - 8, 8);
 
-    // title
-    ctx.fillStyle = "#888";
-    ctx.font = "600 12px monospace";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    ctx.letterSpacing = "1px";
-    ctx.fillText("G-FORCE", cx, 6);
   }
 
   return { update };
