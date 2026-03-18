@@ -52,12 +52,12 @@ export function createServer(wal: WalEngine): http.Server {
           channels: wal.getChannelCounts(),
           generation: wal.currentGeneration,
         });
-      } else if (req.method === "GET" && pathname === "/cam/brightness") {
-        json(res, 200, handleCamGet("brightness"));
-      } else if (req.method === "POST" && pathname === "/cam/brightness/up") {
-        json(res, 200, handleCamAdjust("brightness", 5));
-      } else if (req.method === "POST" && pathname === "/cam/brightness/down") {
-        json(res, 200, handleCamAdjust("brightness", -5));
+      } else if (req.method === "GET" && pathname === "/cam/exposure") {
+        json(res, 200, handleCamGetExposure());
+      } else if (req.method === "POST" && pathname === "/cam/exposure/up") {
+        json(res, 200, handleCamAdjustExposure(1));
+      } else if (req.method === "POST" && pathname === "/cam/exposure/down") {
+        json(res, 200, handleCamAdjustExposure(-1));
       } else if (req.method === "POST" && pathname === "/nuke") {
         await wal.nuke();
         json(res, 200, { ok: true });
@@ -208,27 +208,56 @@ function findCamDevice(): string | null {
   return null;
 }
 
-function handleCamGet(ctrl: string): Record<string, unknown> {
+function getCamCtrl(dev: string, ctrl: string): number {
+  const out = execSync(`v4l2-ctl -d ${dev} --get-ctrl=${ctrl}`, { encoding: "utf-8" });
+  return parseInt(out.replace(/.*:\s*/, ""), 10);
+}
+
+function handleCamGetExposure(): Record<string, unknown> {
   const dev = findCamDevice();
   if (!dev) return { error: "camera not found" };
   try {
-    const out = execSync(`v4l2-ctl -d ${dev} --get-ctrl=${ctrl}`, { encoding: "utf-8" });
-    const val = parseInt(out.replace(/.*:\s*/, ""), 10);
-    return { [ctrl]: val };
+    return {
+      exposure_auto: getCamCtrl(dev, "exposure_auto"),
+      exposure_absolute: getCamCtrl(dev, "exposure_absolute"),
+      gain: getCamCtrl(dev, "gain"),
+      brightness: getCamCtrl(dev, "brightness"),
+    };
   } catch (err: any) {
     return { error: err.message };
   }
 }
 
-function handleCamAdjust(ctrl: string, delta: number): Record<string, unknown> {
+// Exposure steps: raise/lower exposure_absolute and gain together
+// exposure_absolute: 3–2047, gain: 0–255
+const EXPOSURE_STEPS = [3, 5, 10, 20, 40, 80, 150, 250, 500, 1000, 2047];
+const GAIN_STEPS = [0, 32, 64, 96, 128, 160, 192, 224, 255];
+
+function stepValue(steps: number[], current: number, dir: number): number {
+  let closest = 0;
+  let minDist = Infinity;
+  for (let i = 0; i < steps.length; i++) {
+    const d = Math.abs(steps[i] - current);
+    if (d < minDist) { minDist = d; closest = i; }
+  }
+  const next = Math.max(0, Math.min(steps.length - 1, closest + dir));
+  return steps[next];
+}
+
+function handleCamAdjustExposure(dir: number): Record<string, unknown> {
   const dev = findCamDevice();
   if (!dev) return { error: "camera not found" };
   try {
-    const out = execSync(`v4l2-ctl -d ${dev} --get-ctrl=${ctrl}`, { encoding: "utf-8" });
-    const cur = parseInt(out.replace(/.*:\s*/, ""), 10);
-    const next = Math.max(0, Math.min(255, cur + delta));
-    execSync(`v4l2-ctl -d ${dev} --set-ctrl=${ctrl}=${next}`);
-    return { [ctrl]: next };
+    const curExp = getCamCtrl(dev, "exposure_absolute");
+    const curGain = getCamCtrl(dev, "gain");
+
+    const newExp = stepValue(EXPOSURE_STEPS, curExp, dir);
+    const newGain = stepValue(GAIN_STEPS, curGain, dir);
+
+    execSync(`v4l2-ctl -d ${dev} --set-ctrl=exposure_absolute=${newExp}`);
+    execSync(`v4l2-ctl -d ${dev} --set-ctrl=gain=${newGain}`);
+
+    return { exposure_absolute: newExp, gain: newGain };
   } catch (err: any) {
     return { error: err.message };
   }

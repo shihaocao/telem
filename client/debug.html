@@ -82,11 +82,11 @@
       cursor: pointer;
     }
     #cam-controls button:hover { background: #333; }
-    #bright-val {
-      font-size: 16px;
+    #exp-val {
+      font-size: 12px;
       font-weight: 700;
       color: #fff;
-      min-width: 30px;
+      min-width: 120px;
       text-align: center;
     }
     #channels {
@@ -128,10 +128,10 @@
 <body>
   <h1>TELEMETRY DEBUG <span id="status">DISCONNECTED</span> <button id="nuke-btn">NUKE</button> <a href="/" id="back-link">DASHBOARD</a></h1>
   <div id="cam-controls">
-    <span class="cam-label">CAM BRIGHTNESS</span>
-    <button id="bright-down">-</button>
-    <span id="bright-val">--</span>
-    <button id="bright-up">+</button>
+    <span class="cam-label">CAM EXPOSURE</span>
+    <button id="exp-down">-</button>
+    <span id="exp-val">--</span>
+    <button id="exp-up">+</button>
   </div>
   <div id="channels"></div>
   <script type="module">
@@ -231,21 +231,23 @@
       };
     }
 
-    // Camera brightness controls
-    const brightVal = document.getElementById("bright-val");
-    async function camBrightness(action) {
+    // Camera exposure controls
+    const expVal = document.getElementById("exp-val");
+    async function camExposure(action) {
       try {
         const url = action
-          ? `${SERVER_URL}/cam/brightness/${action}`
-          : `${SERVER_URL}/cam/brightness`;
+          ? `${SERVER_URL}/cam/exposure/${action}`
+          : `${SERVER_URL}/cam/exposure`;
         const res = await fetch(url, { method: action ? "POST" : "GET" });
         const data = await res.json();
-        if (data.brightness != null) brightVal.textContent = data.brightness;
+        if (data.exposure_absolute != null) {
+          expVal.textContent = `exp:${data.exposure_absolute} gain:${data.gain}`;
+        }
       } catch {}
     }
-    document.getElementById("bright-up").addEventListener("click", () => camBrightness("up"));
-    document.getElementById("bright-down").addEventListener("click", () => camBrightness("down"));
-    camBrightness(null); // fetch initial value
+    document.getElementById("exp-up").addEventListener("click", () => camExposure("up"));
+    document.getElementById("exp-down").addEventListener("click", () => camExposure("down"));
+    camExposure(null); // fetch initial values
 
     document.getElementById("nuke-btn").addEventListener("click", async () => {
       if (!confirm("Clear all telemetry data on the server?")) return;
