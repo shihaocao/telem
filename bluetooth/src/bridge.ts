@@ -69,7 +69,7 @@ function parsePayload(p: Buffer): Array<{ channel: string; value: number; ts: nu
     { channel: "gyro_x", value: Math.round(gyroX * 10) / 10, ts },
     { channel: "gyro_y", value: Math.round(gyroY * 10) / 10, ts },
     { channel: "gyro_z", value: Math.round(gyroZ * 10) / 10, ts },
-    { channel: "battery", value: battery, ts },
+    { channel: "racebox_battery", value: battery, ts },
   ];
 }
 

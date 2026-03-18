@@ -51,32 +51,45 @@ function mapToKpa(v: number): number {
 }
 
 /**
- * ECT: NTC thermistor lookup with linear interpolation.
- * Voltage decreases as temperature increases.
- * Points derived from Honda FSM and community measurements.
+ * ECT: Honda NTC thermistor (1992 Accord EX)
+ *
+ * Resistance-to-temperature table from Honda FSM:
+ *   12.0 kΩ → -20°C    0.7 kΩ →  60°C
+ *    5.0 kΩ →   0°C    0.4 kΩ →  80°C
+ *    2.0 kΩ →  20°C    0.2 kΩ → 100°C
+ *    1.2 kΩ →  40°C    0.1 kΩ → 120°C
+ *
+ * The Mega reads voltage from a voltage divider: V = 5 * R_therm / (R_pullup + R_therm)
+ * Conversion: voltage → resistance → temperature (log interpolation on R-T table)
  */
+const ECT_PULLUP_KOHM = 6.65; // Honda ECU internal pull-up, derived from 0.25V @ 190°F (87.8°C)
+
 const ECT_TABLE: [number, number][] = [
-  // [voltage, tempC]
-  [4.50, -20],
-  [3.75,   0],
-  [3.50,  20],
-  [2.50,  60],
-  [1.50,  85],
-  [1.00,  95],
-  [0.50, 110],
-  [0.25, 120],
+  // [resistance kΩ, tempC] — sorted descending by resistance
+  [12.0, -20],
+  [5.0,    0],
+  [2.0,   20],
+  [1.2,   40],
+  [0.7,   60],
+  [0.4,   80],
+  [0.2,  100],
+  [0.1,  120],
 ];
 
 function ectToTempC(v: number): number {
-  // Table is sorted descending by voltage
-  if (v >= ECT_TABLE[0][0]) return ECT_TABLE[0][1];
-  if (v <= ECT_TABLE[ECT_TABLE.length - 1][0]) return ECT_TABLE[ECT_TABLE.length - 1][1];
+  // voltage → resistance via voltage divider
+  if (v <= 0 || v >= 5.0) return v <= 0 ? 120 : -20;
+  const rKohm = ECT_PULLUP_KOHM * v / (5.0 - v);
+
+  // log interpolation on resistance-temperature table
+  if (rKohm >= ECT_TABLE[0][0]) return ECT_TABLE[0][1];
+  if (rKohm <= ECT_TABLE[ECT_TABLE.length - 1][0]) return ECT_TABLE[ECT_TABLE.length - 1][1];
 
   for (let i = 0; i < ECT_TABLE.length - 1; i++) {
-    const [v1, t1] = ECT_TABLE[i];
-    const [v2, t2] = ECT_TABLE[i + 1];
-    if (v <= v1 && v >= v2) {
-      const frac = (v1 - v) / (v1 - v2);
+    const [r1, t1] = ECT_TABLE[i];
+    const [r2, t2] = ECT_TABLE[i + 1];
+    if (rKohm <= r1 && rKohm >= r2) {
+      const frac = (Math.log(r1) - Math.log(rKohm)) / (Math.log(r1) - Math.log(r2));
       return t1 + frac * (t2 - t1);
     }
   }
