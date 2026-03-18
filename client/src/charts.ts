@@ -60,18 +60,16 @@ export function createPanels(mgr: TelemetryManager): ChartPanel[] {
   const tpsVal = container.querySelector("#gauge-tps") as HTMLElement;
 
   const update = () => {
-    const gpsBuf = mgr.getBuffer("gps_speed");
-    const ecuBuf = mgr.getBuffer("speed");
-    const buf = gpsBuf?.values.length ? gpsBuf : ecuBuf;
-    if (buf && buf.values.length > 0) {
-      const mph = buf.values[buf.values.length - 1] * KMH_TO_MPH;
+    const speedSmoothed = mgr.getSmoothed("gps_speed") ?? mgr.getSmoothed("speed");
+    if (speedSmoothed != null) {
+      const mph = speedSmoothed * KMH_TO_MPH;
       mphVal.textContent = String(Math.round(mph));
       updateSegments(mphTrack, Math.min(1, mph / MAX_MPH));
     }
 
-    const tpsBuf = mgr.getBuffer("throttle_pos");
-    if (tpsBuf && tpsBuf.values.length > 0) {
-      const tps = Math.max(0, Math.min(100, tpsBuf.values[tpsBuf.values.length - 1]));
+    const tpsSmoothed = mgr.getSmoothed("throttle_pos");
+    if (tpsSmoothed != null) {
+      const tps = Math.max(0, Math.min(100, tpsSmoothed));
       tpsVal.textContent = String(Math.round(tps));
       updateSegments(tpsTrack, tps / 100);
     }

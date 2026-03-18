@@ -1,8 +1,8 @@
 import { TelemetryManager } from "./telemetry";
 
-const MAX_G = 2.0;
+const MAX_G = 1.0;
 const TRAIL_LEN = 200;
-const RING_STEPS = [0.5, 1.0, 1.5, 2.0];
+const RING_STEPS = [0.25, 0.5, 0.75, 1.0];
 
 export interface GCirclePanel {
   update: () => void;
@@ -22,6 +22,10 @@ export function createGCircle(
   let h = 0;
 
   const trail: { x: number; y: number }[] = [];
+  const EMA_ALPHA = 0.15;
+  let emaX = 0;
+  let emaY = 0;
+  let emaInit = false;
 
   const ro = new ResizeObserver((entries) => {
     for (const entry of entries) {
@@ -47,10 +51,22 @@ export function createGCircle(
     const gx = gxBuf.values[len - 1]; // longitudinal
     const gy = gyBuf.values[len - 1]; // lateral
 
-    trail.push({ x: gy, y: -gx }); // lateral = x-axis, braking(+) = up
+    const rawX = gy;     // lateral = x-axis
+    const rawY = -gx;    // braking(+) = up
+
+    if (!emaInit) {
+      emaX = rawX;
+      emaY = rawY;
+      emaInit = true;
+    } else {
+      emaX = EMA_ALPHA * rawX + (1 - EMA_ALPHA) * emaX;
+      emaY = EMA_ALPHA * rawY + (1 - EMA_ALPHA) * emaY;
+    }
+
+    trail.push({ x: emaX, y: emaY });
     if (trail.length > TRAIL_LEN) trail.splice(0, trail.length - TRAIL_LEN);
 
-    draw(gy, -gx);
+    draw(emaX, emaY);
   }
 
   function draw(curX: number, curY: number): void {

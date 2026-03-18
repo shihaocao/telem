@@ -111,8 +111,8 @@ export function createDiagnostics(
       const buf = mgr.getBuffer(cell.channel);
       if (!buf || buf.values.length === 0) continue;
 
-      const val = buf.values[buf.values.length - 1];
-      cell.valueEl.textContent = String(Math.round(val));
+      const smoothed = mgr.getSmoothed(cell.channel) ?? buf.values[buf.values.length - 1];
+      cell.valueEl.textContent = String(Math.round(smoothed));
       drawSparkline(cell, buf.values);
     }
   }

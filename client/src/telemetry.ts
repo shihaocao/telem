@@ -2,7 +2,10 @@ import { TelemetryEntry, ConnectionState, ChannelBuffer } from "./types";
 
 const MAX_POINTS = 6000; // ~2 min at 50Hz
 
-const SERVER_URL = ((import.meta.env.VITE_SERVER_URL as string) ?? "http://gearados-nx.tail62d295.ts.net:4400").replace(/\/$/, "");
+const REMOTE_URL = ((import.meta.env.VITE_SERVER_URL as string) ?? "http://gearados-nx.tail62d295.ts.net:4400").replace(/\/$/, "");
+const LOCAL_URL = "http://localhost:4400";
+const isLocal = new URLSearchParams(window.location.search).has("local");
+const SERVER_URL = isLocal ? LOCAL_URL : REMOTE_URL;
 
 export class TelemetryManager {
   readonly serverUrl = SERVER_URL;
@@ -35,6 +38,22 @@ export class TelemetryManager {
 
   getBuffer(channel: string): ChannelBuffer | undefined {
     return this.buffers.get(channel);
+  }
+
+  /** Average of values within windowMs of the most recent server timestamp */
+  getSmoothed(channel: string, windowMs = 500): number | undefined {
+    const buf = this.buffers.get(channel);
+    if (!buf || buf.values.length === 0) return undefined;
+    const latest = buf.timestamps[buf.timestamps.length - 1];
+    const cutoff = latest - windowMs / 1000;
+    let sum = 0;
+    let count = 0;
+    for (let i = buf.timestamps.length - 1; i >= 0; i--) {
+      if (buf.timestamps[i] < cutoff) break;
+      sum += buf.values[i];
+      count++;
+    }
+    return count > 0 ? sum / count : buf.values[buf.values.length - 1];
   }
 
   connect(): void {

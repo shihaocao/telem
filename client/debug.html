@@ -89,6 +89,37 @@
       min-width: 120px;
       text-align: center;
     }
+    #debug-controls {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    #latency-panel {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #13132a;
+      border: 1px solid #1e1e3a;
+      border-radius: 4px;
+      padding: 8px 14px;
+    }
+    #last-update {
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+      min-width: 60px;
+    }
+    #latency-val {
+      font-size: 12px;
+      font-weight: 700;
+      color: #2ecc71;
+      min-width: 50px;
+    }
+    #latency-canvas {
+      height: 30px;
+      width: 200px;
+    }
     #channels {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
@@ -127,20 +158,87 @@
 </head>
 <body>
   <h1>TELEMETRY DEBUG <span id="status">DISCONNECTED</span> <button id="nuke-btn">NUKE</button> <a href="/" id="back-link">DASHBOARD</a></h1>
-  <div id="cam-controls">
-    <span class="cam-label">CAM EXPOSURE</span>
-    <button id="exp-down">-</button>
-    <span id="exp-val">--</span>
-    <button id="exp-up">+</button>
+  <div id="debug-controls">
+    <div id="cam-controls">
+      <span class="cam-label">CAM EXPOSURE</span>
+      <button id="exp-down">-</button>
+      <span id="exp-val">--</span>
+      <button id="exp-up">+</button>
+    </div>
+    <div id="latency-panel">
+      <span class="cam-label">LAST UPDATE</span>
+      <span id="last-update">--</span>
+      <span class="cam-label" style="margin-left:16px">LATENCY</span>
+      <span id="latency-val">--</span>
+      <canvas id="latency-canvas" width="200" height="30"></canvas>
+    </div>
   </div>
   <div id="channels"></div>
   <script type="module">
-    const SERVER_URL = (import.meta.env.VITE_SERVER_URL ?? "http://gearados-nx.tail62d295.ts.net:4400").replace(/\/$/, "");
+    const REMOTE_URL = (import.meta.env.VITE_SERVER_URL ?? "http://gearados-nx.tail62d295.ts.net:4400").replace(/\/$/, "");
+    const isLocal = new URLSearchParams(window.location.search).has("local");
+    const SERVER_URL = isLocal ? "http://localhost:4400" : REMOTE_URL;
     const MAX_PTS = 200;
     const container = document.getElementById("channels");
     const statusEl = document.getElementById("status");
 
     const channels = new Map();
+
+    // Latency tracking
+    const lastUpdateEl = document.getElementById("last-update");
+    const latencyValEl = document.getElementById("latency-val");
+    const latencyCanvas = document.getElementById("latency-canvas");
+    const latencyCtx = latencyCanvas.getContext("2d");
+    const LATENCY_WINDOW_MS = 60_000;
+    const latencyHistory = []; // [{t, ms}]
+    let lastEntryTime = 0;
+    let lastPacketTime = 0;
+
+    function updateLatencyDisplay() {
+      const now = Date.now();
+      const latencyMs = lastPacketTime ? now - lastPacketTime : 0;
+      lastEntryTime = now;
+      lastPacketTime = now;
+      latencyHistory.push({ t: now, ms: latencyMs });
+      const cutoff = now - LATENCY_WINDOW_MS;
+      while (latencyHistory.length > 0 && latencyHistory[0].t < cutoff) latencyHistory.shift();
+      const recent = latencyHistory.slice(-10);
+      const avgMs = recent.length > 0 ? Math.round(recent.reduce((s, p) => s + p.ms, 0) / recent.length) : latencyMs;
+      latencyValEl.textContent = `${avgMs}ms`;
+      latencyValEl.style.color = avgMs < 200 ? "#2ecc71" : avgMs < 1000 ? "#f1c40f" : "#e74c3c";
+      drawLatencyChart();
+    }
+
+    function drawLatencyChart() {
+      const dpr = window.devicePixelRatio || 1;
+      const w = latencyCanvas.clientWidth;
+      const h = latencyCanvas.clientHeight;
+      latencyCanvas.width = w * dpr;
+      latencyCanvas.height = h * dpr;
+      latencyCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      latencyCtx.clearRect(0, 0, w, h);
+      if (latencyHistory.length < 2) return;
+
+      const vals = latencyHistory.map(p => p.ms);
+      const max = Math.max(...vals, 100);
+      latencyCtx.beginPath();
+      for (let i = 0; i < vals.length; i++) {
+        const x = (i / (vals.length - 1)) * w;
+        const y = h - (vals[i] / max) * h;
+        if (i === 0) latencyCtx.moveTo(x, y);
+        else latencyCtx.lineTo(x, y);
+      }
+      latencyCtx.strokeStyle = "rgba(46, 204, 113, 0.7)";
+      latencyCtx.lineWidth = 1.5;
+      latencyCtx.stroke();
+    }
+
+    // Update "last update" age every 100ms
+    setInterval(() => {
+      if (!lastEntryTime) return;
+      const ago = ((Date.now() - lastEntryTime) / 1000).toFixed(1);
+      lastUpdateEl.textContent = `${ago}s ago`;
+    }, 100);
 
     function getOrCreate(name) {
       if (channels.has(name)) return channels.get(name);
@@ -164,6 +262,7 @@
         canvas,
         ctx,
         values: [],
+        recent: [], // [{t, v}] for smoothing
       };
       channels.set(name, ch);
       return ch;
@@ -208,14 +307,20 @@
       const es = new EventSource(`${SERVER_URL}/stream?history=false`);
 
       es.addEventListener("entry", (e) => {
-        const { channel, value } = JSON.parse(e.data);
+        const { channel, value, ts } = JSON.parse(e.data);
         if (typeof value !== "number") return;
 
         const ch = getOrCreate(channel);
         ch.values.push(value);
         if (ch.values.length > MAX_PTS) ch.values.shift();
-        ch.valueEl.textContent = value.toFixed(3);
+        const now = Date.now();
+        ch.recent.push({ t: now, v: value });
+        const cutoff = now - 250;
+        while (ch.recent.length > 0 && ch.recent[0].t < cutoff) ch.recent.shift();
+        const avg = ch.recent.reduce((s, p) => s + p.v, 0) / ch.recent.length;
+        ch.valueEl.textContent = avg.toFixed(3);
         drawSparkline(ch);
+        updateLatencyDisplay();
       });
 
       es.addEventListener("caught_up", () => {
