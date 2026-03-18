@@ -6,7 +6,7 @@ set -euo pipefail
 
 export TAILSCALE_HOST=100.99.198.13
 BASE_PORT=9000
-SRT_LATENCY=100
+SRT_LATENCY=50
 
 # Find all video capture devices (skip metadata/control nodes)
 DEVICES=()
