@@ -6,8 +6,8 @@ import { SONOMA_TRACK, TRACK_CENTER, TRACK_ZOOM, FINISH_LINE, TURNS } from "./tr
 
 const TRAIL_MAX = 3000;
 const TRAIL_COLOR = "#ff6b35";
-const TRACK_OUTLINE_COLOR = "rgba(255, 107, 53, 0.5)";
-const MARKER_COLOR = "#ff6b35";
+const TRACK_OUTLINE_COLOR = "rgba(255, 255, 255, 0.3)";
+const MARKER_COLOR = "#fff";
 const DECAY_SEGMENTS = 20;
 
 const TILES = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
@@ -53,11 +53,13 @@ export interface MapPanels {
 }
 
 
-// Speed-to-color: red (0 km/h) → amber (80 km/h) → blue (160+ km/h)
+// Speed-to-color (km/h): white (0-64) → yellow (64-80) → orange (80-129) → red (129+)
 const SPEED_COLORS: [number, [number, number, number]][] = [
-  [0,   [231, 76, 60]],    // red (slow)
-  [80,  [255, 107, 53]],   // amber
-  [160, [52, 152, 219]],   // blue (fast)
+  [0,   [255, 255, 255]],  // white
+  [64,  [255, 255, 255]],  // white (40 mph)
+  [80,  [241, 196, 15]],   // yellow (50 mph)
+  [129, [255, 107, 53]],   // orange (80 mph)
+  [193, [231, 76, 60]],    // red (120 mph)
 ];
 
 function speedToColor(kmh: number): string {
@@ -112,13 +114,13 @@ function buildSpeedTrail(
     const avgSpeed = cnt > 0 ? sum / cnt : 0;
     const color = speedToColor(avgSpeed);
 
-    // age-based opacity
+    // age-based opacity (kept subtle)
     const midIdx = (b + Math.min(b + bucketSize, coords.length - 1)) / 2;
-    const opacity = 0.15 + (midIdx / (coords.length - 1)) * 0.85;
+    const opacity = 0.08 + (midIdx / (coords.length - 1)) * 0.5;
 
     const line = L.polyline(slice as L.LatLngExpression[], {
       color,
-      weight: 2.5,
+      weight: 2,
       opacity,
     }).addTo(map);
     segments.push(line);

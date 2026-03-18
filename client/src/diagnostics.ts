@@ -6,9 +6,8 @@ export interface DiagPanel {
 
 const SPARK_POINTS = 100;
 
-// NERV colors
-const AMBER = "rgb(255, 107, 53)";
 const RED = "rgb(231, 76, 60)";
+const ORANGE = "rgb(255, 107, 53)";
 
 interface DiagCell {
   channel: string;
@@ -112,7 +111,7 @@ export function createDiagnostics(
 
   const cells: DiagCell[] = [
     createCell(grid, "coolant_temp", "冷却 COOLANT", "\u00B0C", RED, 0, 130, 100),
-    createCell(grid, "manifold_pressure", "圧力 MAP", "kPa", AMBER, 0, 110),
+    createCell(grid, "manifold_pressure", "圧力 MANIFOLD AIR PRESSURE", "kPa", ORANGE, 0, 110),
   ];
 
   function update(): void {

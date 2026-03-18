@@ -4,15 +4,13 @@ const MAX_G = 1.0;
 const TRAIL_LEN = 200;
 const RING_STEPS = [0.25, 0.5, 0.75, 1.0];
 
-// NERV colors
-const AMBER = "#ff6b35";
-const AMBER_DIM = "rgba(255, 107, 53, 0.08)";
-const AMBER_LINE = "rgba(255, 107, 53, 0.12)";
-const AMBER_TEXT = "rgba(255, 107, 53, 0.25)";
-const AMBER_LABEL = "rgba(255, 107, 53, 0.45)";
-const RED = "#e74c3c";
-const RED_DIM = (a: number) => `rgba(231, 76, 60, ${a})`;
-const TEXT_BRIGHT = "#f0e6d0";
+const GRID_DIM = "rgba(255, 255, 255, 0.06)";
+const GRID_LINE = "rgba(255, 255, 255, 0.1)";
+const GRID_TEXT = "rgba(255, 255, 255, 0.2)";
+const AXIS_LABEL = "rgba(255, 107, 53, 0.5)";
+const DOT_COLOR = "#ff6b35";
+const TRAIL_DIM = (a: number) => `rgba(255, 107, 53, ${a})`;
+const TEXT_BRIGHT = "#eee";
 
 export interface GCirclePanel {
   update: () => void;
@@ -93,12 +91,12 @@ export function createGCircle(
       const r = g * scale;
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.strokeStyle = AMBER_DIM;
+      ctx.strokeStyle = GRID_DIM;
       ctx.stroke();
     }
 
     // crosshair
-    ctx.strokeStyle = AMBER_LINE;
+    ctx.strokeStyle = GRID_LINE;
     ctx.beginPath();
     ctx.moveTo(cx - radius, cy);
     ctx.lineTo(cx + radius, cy);
@@ -107,7 +105,7 @@ export function createGCircle(
     ctx.stroke();
 
     // tick marks on crosshair
-    ctx.strokeStyle = AMBER_LINE;
+    ctx.strokeStyle = GRID_LINE;
     ctx.lineWidth = 1;
     for (const g of RING_STEPS) {
       const r = g * scale;
@@ -127,7 +125,7 @@ export function createGCircle(
     }
 
     // ring labels
-    ctx.fillStyle = AMBER_TEXT;
+    ctx.fillStyle = GRID_TEXT;
     ctx.font = "9px monospace";
     ctx.textAlign = "left";
     ctx.textBaseline = "bottom";
@@ -136,7 +134,7 @@ export function createGCircle(
     }
 
     // axis labels
-    ctx.fillStyle = AMBER_LABEL;
+    ctx.fillStyle = AXIS_LABEL;
     ctx.font = "bold 9px monospace";
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
@@ -157,7 +155,7 @@ export function createGCircle(
       const py = cy + t.y * scale;
       ctx.beginPath();
       ctx.arc(px, py, 1.5, 0, Math.PI * 2);
-      ctx.fillStyle = RED_DIM(alpha);
+      ctx.fillStyle = TRAIL_DIM(alpha);
       ctx.fill();
     }
 
@@ -168,14 +166,14 @@ export function createGCircle(
     // glow
     ctx.beginPath();
     ctx.arc(px, py, 8, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(231, 76, 60, 0.15)";
+    ctx.fillStyle = "rgba(255, 107, 53, 0.12)";
     ctx.fill();
 
     ctx.beginPath();
     ctx.arc(px, py, 4, 0, Math.PI * 2);
-    ctx.fillStyle = RED;
+    ctx.fillStyle = DOT_COLOR;
     ctx.fill();
-    ctx.strokeStyle = AMBER;
+    ctx.strokeStyle = "#fff";
     ctx.lineWidth = 1.5;
     ctx.stroke();
 

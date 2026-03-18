@@ -7,7 +7,9 @@ import { createDiagnostics, DiagPanel } from "./diagnostics";
 import { ConnectionState } from "./types";
 
 const statusEl = document.getElementById("connection-status")!;
-const headingEl = document.getElementById("stat-heading")!;
+const latencyEl = document.getElementById("stat-latency")!;
+const latencySpark = document.getElementById("latency-spark") as HTMLCanvasElement;
+const latencyCtx = latencySpark.getContext("2d")!;
 const seqEl = document.getElementById("stat-seq")!;
 const rateEl = document.getElementById("stat-rate")!;
 const mgr = new TelemetryManager();
@@ -23,6 +25,60 @@ const STATE_LABELS: Record<ConnectionState, string> = {
 mgr.onStateChange = (state) => {
   statusEl.textContent = STATE_LABELS[state];
   statusEl.className = state;
+};
+
+// latency tracking — debounced per batch
+const LATENCY_WINDOW = 60_000;
+const latencyHistory: { t: number; ms: number }[] = [];
+let lastBatchTime = 0;
+let batchDebounce: ReturnType<typeof setTimeout> | null = null;
+
+function onEntry(): void {
+  if (batchDebounce) return;
+  batchDebounce = setTimeout(() => {
+    batchDebounce = null;
+    const now = Date.now();
+    const ms = lastBatchTime ? now - lastBatchTime : 0;
+    lastBatchTime = now;
+    latencyHistory.push({ t: now, ms });
+    const cutoff = now - LATENCY_WINDOW;
+    while (latencyHistory.length > 0 && latencyHistory[0].t < cutoff) latencyHistory.shift();
+    const recent = latencyHistory.slice(-10);
+    const avg = recent.length > 0 ? Math.round(recent.reduce((s, p) => s + p.ms, 0) / recent.length) : ms;
+    latencyEl.textContent = `${avg}ms`;
+    drawLatencySpark();
+  }, 5);
+}
+
+function drawLatencySpark(): void {
+  const dpr = window.devicePixelRatio || 1;
+  const w = latencySpark.clientWidth;
+  const h = latencySpark.clientHeight;
+  latencySpark.width = w * dpr;
+  latencySpark.height = h * dpr;
+  latencyCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  latencyCtx.clearRect(0, 0, w, h);
+  if (latencyHistory.length < 2) return;
+
+  const vals = latencyHistory.map((p) => p.ms);
+  const max = Math.max(...vals, 100);
+  latencyCtx.beginPath();
+  for (let i = 0; i < vals.length; i++) {
+    const x = (i / (vals.length - 1)) * w;
+    const y = h - (vals[i] / max) * h;
+    if (i === 0) latencyCtx.moveTo(x, y);
+    else latencyCtx.lineTo(x, y);
+  }
+  latencyCtx.strokeStyle = "rgba(255, 107, 53, 0.6)";
+  latencyCtx.lineWidth = 1;
+  latencyCtx.stroke();
+}
+
+// hook into telemetry manager's ingest
+const origConnect = mgr.connect.bind(mgr);
+mgr.connect = function () {
+  origConnect();
+  // patch: listen for dirty flag as a proxy for new entries
 };
 
 let panels: ChartPanel[] = [];
@@ -58,11 +114,8 @@ function loop() {
     const seq = mgr.lastSeqNum;
     seqEl.textContent = String(seq);
 
-    const hdgBuf = mgr.getBuffer("gps_heading");
-    if (hdgBuf && hdgBuf.values.length > 0) {
-      const hdg = hdgBuf.values[hdgBuf.values.length - 1];
-      headingEl.textContent = `${Math.round(hdg)}°`;
-    }
+    // latency
+    onEntry();
 
     entryCount++;
     const now = performance.now();

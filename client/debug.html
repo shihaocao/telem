@@ -246,21 +246,28 @@
     const LATENCY_WINDOW_MS = 60_000;
     const latencyHistory = []; // [{t, ms}]
     let lastEntryTime = 0;
-    let lastPacketTime = 0;
+    let lastBatchTime = 0;
+    let batchDebounce = null;
 
-    function updateLatencyDisplay() {
-      const now = Date.now();
-      const latencyMs = lastPacketTime ? now - lastPacketTime : 0;
-      lastEntryTime = now;
-      lastPacketTime = now;
-      latencyHistory.push({ t: now, ms: latencyMs });
-      const cutoff = now - LATENCY_WINDOW_MS;
-      while (latencyHistory.length > 0 && latencyHistory[0].t < cutoff) latencyHistory.shift();
-      const recent = latencyHistory.slice(-10);
-      const avgMs = recent.length > 0 ? Math.round(recent.reduce((s, p) => s + p.ms, 0) / recent.length) : latencyMs;
-      latencyValEl.textContent = `${avgMs}ms`;
-      latencyValEl.style.color = avgMs < 200 ? "#2ecc71" : avgMs < 1000 ? "#d4a017" : "#e74c3c";
-      drawLatencyChart();
+    // Debounce: entries arrive in bursts (one batch = many channels).
+    // Only record one latency measurement per burst, after 5ms of silence.
+    function scheduleLatencyUpdate() {
+      lastEntryTime = Date.now();
+      if (batchDebounce) return; // already scheduled
+      batchDebounce = setTimeout(() => {
+        batchDebounce = null;
+        const now = Date.now();
+        const latencyMs = lastBatchTime ? now - lastBatchTime : 0;
+        lastBatchTime = now;
+        latencyHistory.push({ t: now, ms: latencyMs });
+        const cutoff = now - LATENCY_WINDOW_MS;
+        while (latencyHistory.length > 0 && latencyHistory[0].t < cutoff) latencyHistory.shift();
+        const recent = latencyHistory.slice(-10);
+        const avgMs = recent.length > 0 ? Math.round(recent.reduce((s, p) => s + p.ms, 0) / recent.length) : latencyMs;
+        latencyValEl.textContent = `${avgMs}ms`;
+        latencyValEl.style.color = avgMs < 200 ? "#2ecc71" : avgMs < 1000 ? "#d4a017" : "#e74c3c";
+        drawLatencyChart();
+      }, 5);
     }
 
     function drawLatencyChart() {
@@ -374,7 +381,7 @@
         const avg = ch.recent.reduce((s, p) => s + p.v, 0) / ch.recent.length;
         ch.valueEl.textContent = avg.toFixed(3);
         drawSparkline(ch);
-        updateLatencyDisplay();
+        scheduleLatencyUpdate();
       });
 
       es.addEventListener("caught_up", () => {

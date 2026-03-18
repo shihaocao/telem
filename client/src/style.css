@@ -9,18 +9,21 @@
 :root {
   --bg: #0a0a0a;
   --panel-bg: #0d0d12;
-  --border: rgba(255, 107, 53, 0.12);
-  --border-bright: rgba(255, 107, 53, 0.3);
+  --border: rgba(255, 255, 255, 0.06);
+  --border-bright: rgba(255, 255, 255, 0.12);
   --accent: #ff6b35;
   --accent-dim: rgba(255, 107, 53, 0.5);
   --accent-glow: rgba(255, 107, 53, 0.15);
+  --cyan: #00d4aa;
+  --cyan-dim: rgba(0, 212, 170, 0.5);
   --red: #e74c3c;
   --red-dim: rgba(231, 76, 60, 0.5);
   --green: #2ecc71;
   --amber: #d4a017;
-  --text: #c8bfa0;
-  --text-bright: #f0e6d0;
-  --text-dim: rgba(200, 191, 160, 0.35);
+  --yellow: #f1c40f;
+  --text: #999;
+  --text-bright: #eee;
+  --text-dim: rgba(255, 255, 255, 0.2);
   --font: "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
 }
 
@@ -70,7 +73,7 @@ body::after {
   top: 0;
   left: 0;
   right: 0;
-  height: 1px;
+  height: 2px;
   background: linear-gradient(
     90deg,
     transparent 0%,
@@ -78,6 +81,7 @@ body::after {
     var(--accent) 80%,
     transparent 100%
   );
+  box-shadow: 0 0 8px var(--accent-glow), 0 0 20px rgba(255, 107, 53, 0.1);
 }
 
 .header-left {
@@ -91,7 +95,7 @@ body::after {
   font-size: 13px;
   letter-spacing: 3px;
   color: var(--accent);
-  text-shadow: 0 0 8px var(--accent-glow);
+  text-shadow: 0 0 10px rgba(255, 107, 53, 0.4), 0 0 30px rgba(255, 107, 53, 0.15);
 }
 
 .title-jp {
@@ -103,7 +107,7 @@ body::after {
 .title-sub {
   font-size: 9px;
   letter-spacing: 1px;
-  color: rgba(255, 107, 53, 0.3);
+  color: rgba(255, 255, 255, 0.2);
   font-weight: 600;
 }
 
@@ -121,7 +125,13 @@ body::after {
 }
 
 .stat b {
-  color: var(--text);
+  color: var(--text-bright);
+}
+
+#latency-spark {
+  height: 16px;
+  width: 80px;
+  vertical-align: middle;
 }
 
 #connection-status {
@@ -149,7 +159,7 @@ body::after {
 }
 #connection-status.live::before {
   background: var(--green);
-  box-shadow: 0 0 6px var(--green), 0 0 12px var(--green);
+  box-shadow: 0 0 6px var(--green), 0 0 16px var(--green), 0 0 30px rgba(46, 204, 113, 0.3);
 }
 
 #connection-status.connecting::before,
@@ -169,19 +179,19 @@ body::after {
 }
 
 #debug-link {
-  color: rgba(255, 107, 53, 0.3);
+  color: rgba(255, 255, 255, 0.25);
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 2px;
   text-decoration: none;
   text-transform: uppercase;
-  border: 1px solid rgba(255, 107, 53, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   padding: 2px 8px;
 }
 
 #debug-link:hover {
-  color: var(--accent);
-  border-color: var(--accent-dim);
+  color: var(--text-bright);
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 /* ── DASHBOARD GRID ── */
@@ -208,10 +218,11 @@ body::after {
 /* ── PANELS ── */
 .chart-panel {
   background: var(--panel-bg);
-  border: 1px solid var(--border);
+  border: 1px solid rgba(255, 107, 53, 0.15);
   overflow: hidden;
   position: relative;
   min-height: 0;
+  box-shadow: 0 0 12px rgba(255, 107, 53, 0.06), inset 0 0 20px rgba(255, 107, 53, 0.03);
 }
 
 /* corner brackets */
@@ -226,19 +237,21 @@ body::after {
 .chart-panel::before {
   top: 0;
   left: 0;
-  width: 16px;
-  height: 16px;
-  border-top: 1px solid var(--accent-dim);
-  border-left: 1px solid var(--accent-dim);
+  width: 20px;
+  height: 20px;
+  border-top: 2px solid var(--accent);
+  border-left: 2px solid var(--accent);
+  filter: drop-shadow(0 0 4px var(--accent-glow));
 }
 
 .chart-panel::after {
   bottom: 0;
   right: 0;
-  width: 16px;
-  height: 16px;
-  border-bottom: 1px solid var(--accent-dim);
-  border-right: 1px solid var(--accent-dim);
+  width: 20px;
+  height: 20px;
+  border-bottom: 2px solid var(--accent);
+  border-right: 2px solid var(--accent);
+  filter: drop-shadow(0 0 4px var(--accent-glow));
 }
 
 /* panel label (via data-label attribute) */
@@ -253,7 +266,7 @@ body::after {
   font-size: 8px;
   font-weight: 700;
   letter-spacing: 2px;
-  color: var(--accent-dim);
+  color: var(--text-dim);
   text-transform: uppercase;
   z-index: 3;
   display: flex;
@@ -284,14 +297,14 @@ body::after {
 .leaflet-bar a,
 .leaflet-control {
   background: var(--panel-bg) !important;
-  color: var(--accent-dim) !important;
+  color: var(--text) !important;
   border-color: var(--border) !important;
   box-shadow: none !important;
 }
 
 .leaflet-bar a:hover {
   background: #1a1a24 !important;
-  color: var(--accent) !important;
+  color: var(--text-bright) !important;
 }
 
 /* kill all focus rings / outlines on map elements */
@@ -301,6 +314,11 @@ body::after {
 .leaflet-container *:focus {
   outline: none !important;
   box-shadow: none !important;
+}
+
+/* hide all controls on follow map */
+#map-follow .leaflet-control-container {
+  display: none !important;
 }
 
 #map-follow .leaflet-container {
@@ -323,12 +341,12 @@ body::after {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 4px var(--accent);
+  background: #fff;
+  box-shadow: 0 0 4px #fff;
 }
 
 .finish-text {
-  color: var(--accent);
+  color: #fff;
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 1px;
@@ -337,7 +355,7 @@ body::after {
 }
 
 .finish-label {
-  color: var(--accent);
+  color: #fff;
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 1px;
@@ -347,7 +365,7 @@ body::after {
 }
 
 .turn-label {
-  color: rgba(255, 107, 53, 0.65);
+  color: rgba(255, 255, 255, 0.45);
   font-size: 9px;
   font-weight: 600;
   font-family: inherit;
@@ -414,7 +432,7 @@ body::after {
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 3px;
-  color: var(--accent-dim);
+  color: var(--text-dim);
   text-transform: uppercase;
   display: flex;
   align-items: center;
@@ -436,15 +454,15 @@ body::after {
 .gauge-value {
   font-size: 56px;
   font-weight: 700;
-  color: var(--text-bright);
+  color: #fff;
   line-height: 1;
-  text-shadow: 0 0 20px var(--accent-glow);
+  text-shadow: 0 0 15px rgba(255, 255, 255, 0.3), 0 0 40px rgba(255, 107, 53, 0.1);
 }
 
 .gauge-unit {
   font-size: 11px;
   font-weight: 600;
-  color: var(--accent-dim);
+  color: var(--text);
   letter-spacing: 2px;
 }
 
@@ -458,11 +476,12 @@ body::after {
 
 .seg {
   flex: 1;
-  background: rgba(255, 107, 53, 0.04);
-  border: 1px solid rgba(255, 107, 53, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   transition: background 0.05s, box-shadow 0.05s;
 }
 
+/* seg-on colors set dynamically via JS for speed gauge */
 .seg-speed.seg-on {
   background: var(--accent);
   border-color: var(--accent);
@@ -470,9 +489,9 @@ body::after {
 }
 
 .seg-throttle.seg-on {
-  background: var(--red);
-  border-color: var(--red);
-  box-shadow: 0 0 8px var(--red-dim), inset 0 0 4px rgba(231, 76, 60, 0.3);
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow), inset 0 0 4px rgba(255, 107, 53, 0.3);
 }
 
 /* separator between gauges */
@@ -515,7 +534,7 @@ body::after {
 .diag-cell-label {
   font-size: 9px;
   font-weight: 700;
-  color: var(--accent-dim);
+  color: var(--text);
   letter-spacing: 2px;
 }
 
@@ -528,14 +547,15 @@ body::after {
 .diag-cell-value {
   font-size: 28px;
   font-weight: 700;
-  color: var(--text-bright);
+  color: #fff;
   line-height: 1;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
 }
 
 .diag-cell-unit {
   font-size: 9px;
   font-weight: 600;
-  color: var(--text-dim);
+  color: var(--text);
   letter-spacing: 1px;
 }
 
@@ -582,7 +602,7 @@ body::after {
 }
 
 .footer-deco span:nth-child(odd) {
-  background: var(--accent-dim);
+  background: rgba(255, 107, 53, 0.3);
 }
 
 /* ── ANIMATIONS ── */

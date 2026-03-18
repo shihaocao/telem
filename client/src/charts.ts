@@ -9,11 +9,13 @@ const MAX_MPH = 120;
 const MPH_SEGMENTS = 32;
 const TPS_SEGMENTS = 20;
 
-// Same color ramp as trail: red (slow) → amber → blue (fast)
+// Speed color ramp (mph): white → yellow → orange → red
 const SPEED_COLORS: [number, [number, number, number]][] = [
-  [0,   [231, 76, 60]],    // red
-  [80,  [255, 107, 53]],   // amber
-  [160, [52, 152, 219]],   // blue
+  [0,   [255, 255, 255]],  // white
+  [40,  [255, 255, 255]],  // white
+  [50,  [241, 196, 15]],   // yellow
+  [80,  [255, 107, 53]],   // orange
+  [120, [231, 76, 60]],    // red
 ];
 
 function speedColor(mph: number): string {
