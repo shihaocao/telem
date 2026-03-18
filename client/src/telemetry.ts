@@ -5,6 +5,7 @@ const MAX_POINTS = 6000; // ~2 min at 50Hz
 const SERVER_URL = ((import.meta.env.VITE_SERVER_URL as string) ?? "http://gearados-nx.tail62d295.ts.net:4400").replace(/\/$/, "");
 
 export class TelemetryManager {
+  readonly serverUrl = SERVER_URL;
   private es: EventSource | null = null;
   private buffers = new Map<string, ChannelBuffer>();
   private lastSeq = 0;

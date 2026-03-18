@@ -3,12 +3,14 @@ import { TelemetryManager } from "./telemetry";
 import { createPanels, ChartPanel } from "./charts";
 import { createMaps, MapPanels } from "./map";
 import { createGCircle, GCirclePanel } from "./gcircle";
+import { createDiagnostics, DiagPanel } from "./diagnostics";
 import { ConnectionState } from "./types";
 
 const statusEl = document.getElementById("connection-status")!;
 const headingEl = document.getElementById("stat-heading")!;
 const seqEl = document.getElementById("stat-seq")!;
 const rateEl = document.getElementById("stat-rate")!;
+const nukeBtn = document.getElementById("nuke-btn")!;
 
 const mgr = new TelemetryManager();
 
@@ -28,6 +30,18 @@ mgr.onStateChange = (state) => {
 let panels: ChartPanel[] = [];
 let maps: MapPanels;
 let gcircle: GCirclePanel;
+let diag: DiagPanel;
+
+// Nuke button — clear all server data
+nukeBtn.addEventListener("click", async () => {
+  if (!confirm("Clear all telemetry data on the server?")) return;
+  try {
+    await fetch(`${mgr.serverUrl}/nuke`, { method: "POST" });
+    window.location.reload();
+  } catch (err: any) {
+    console.error("nuke failed:", err.message);
+  }
+});
 
 function init() {
   panels = createPanels(mgr);
@@ -37,6 +51,7 @@ function init() {
     mgr,
   );
   gcircle = createGCircle(document.getElementById("gcircle")!, mgr);
+  diag = createDiagnostics(document.getElementById("diagnostics")!, mgr);
   mgr.connect();
   requestAnimationFrame(loop);
 }
@@ -50,6 +65,7 @@ function loop() {
     for (const p of panels) p.update();
     maps.update();
     gcircle.update();
+    diag.update();
 
     // update stats
     const seq = mgr.lastSeqNum;

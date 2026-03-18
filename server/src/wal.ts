@@ -300,6 +300,19 @@ export class WalEngine extends EventEmitter {
     return this.bySeq.size;
   }
 
+  /** Clear all data and reset to empty state */
+  async nuke(): Promise<void> {
+    this.close();
+    fs.rmSync(this.walDir, { recursive: true, force: true });
+    fs.rmSync(this.snapDir, { recursive: true, force: true });
+    this.byChannel.clear();
+    this.bySeq.clear();
+    this.seq = 0;
+    this.generation = 1;
+    this.entriesInGeneration = 0;
+    await this.init();
+  }
+
   /** Flush pending writes and close the WAL fd */
   close(): void {
     if (this.fd !== null) {

@@ -287,4 +287,45 @@ describe("WalEngine", () => {
       expect(results.every((e) => e.channel === "rpm")).toBe(true);
     });
   });
+
+  describe("nuke", () => {
+    it("clears all data and resets state", async () => {
+      wal.append("speed", 100);
+      wal.append("rpm", 8000);
+      expect(wal.currentSeq).toBe(2);
+      expect(wal.totalEntries).toBe(2);
+
+      await wal.nuke();
+
+      expect(wal.currentSeq).toBe(0);
+      expect(wal.totalEntries).toBe(0);
+      expect(wal.getChannels()).toEqual([]);
+    });
+
+    it("allows new appends after nuke", async () => {
+      wal.append("speed", 100);
+      await wal.nuke();
+
+      const entry = wal.append("rpm", 5000);
+      expect(entry.seq).toBe(1);
+      expect(wal.totalEntries).toBe(1);
+    });
+
+    it("removes WAL and snapshot files", async () => {
+      wal.append("speed", 100);
+      wal.close();
+
+      const walFiles = fs.readdirSync(path.join(dataDir, "wal"));
+      expect(walFiles.length).toBeGreaterThan(0);
+
+      wal = new WalEngine({ dataDir, snapshotThreshold: 50_000, fsyncBatchSize: 10 });
+      await wal.init();
+      await wal.nuke();
+
+      const walFilesAfter = fs.readdirSync(path.join(dataDir, "wal"));
+      const snapFilesAfter = fs.readdirSync(path.join(dataDir, "snapshots"));
+      // fresh WAL file created by init, but no old data
+      expect(wal.totalEntries).toBe(0);
+    });
+  });
 });

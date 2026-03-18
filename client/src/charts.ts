@@ -89,6 +89,18 @@ export function createPanels(mgr: TelemetryManager): ChartPanel[] {
   overlay.innerHTML = `<span class="speed-value">--</span><span class="speed-unit">MPH</span>`;
   container.appendChild(overlay);
 
+  // throttle bar
+  const throttleBar = document.createElement("div");
+  throttleBar.className = "throttle-bar-container";
+  throttleBar.innerHTML = `<div class="throttle-bar-fill"></div>`;
+  container.appendChild(throttleBar);
+  const throttleFill = throttleBar.querySelector(".throttle-bar-fill") as HTMLElement;
+
+  const throttleLabel = document.createElement("div");
+  throttleLabel.className = "throttle-label";
+  throttleLabel.textContent = "TPS --%";
+  container.appendChild(throttleLabel);
+
   const rect = container.getBoundingClientRect();
   const channels = ["speed", "gps_speed"];
   const opts = buildSparklineOpts(rect.width, rect.height);
@@ -107,6 +119,15 @@ export function createPanels(mgr: TelemetryManager): ChartPanel[] {
     if (buf && buf.values.length > 0) {
       const mph = buf.values[buf.values.length - 1] * KMH_TO_MPH;
       valueEl.textContent = String(Math.round(mph));
+    }
+
+    // update throttle bar
+    const tpsBuf = mgr.getBuffer("throttle_pos");
+    if (tpsBuf && tpsBuf.values.length > 0) {
+      const tps = tpsBuf.values[tpsBuf.values.length - 1];
+      const pct = Math.max(0, Math.min(100, tps));
+      throttleFill.style.width = `${pct}%`;
+      throttleLabel.textContent = `TPS ${Math.round(pct)}%`;
     }
   };
 

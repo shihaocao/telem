@@ -51,6 +51,9 @@ export function createServer(wal: WalEngine): http.Server {
           channels: wal.getChannelCounts(),
           generation: wal.currentGeneration,
         });
+      } else if (req.method === "POST" && pathname === "/nuke") {
+        await wal.nuke();
+        json(res, 200, { ok: true });
       } else if (req.method === "GET" && pathname === "/health") {
         json(res, 200, { ok: true });
       } else {

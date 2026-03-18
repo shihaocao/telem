@@ -13,6 +13,7 @@
       <span class="stat">seq <b id="stat-seq">0</b></span>
       <span class="stat">rate <b id="stat-rate">--</b></span>
       <span id="connection-status" class="disconnected">DISCONNECTED</span>
+      <button id="nuke-btn" title="Clear all telemetry data">NUKE</button>
     </div>
   </header>
   <main id="dashboard">
@@ -20,6 +21,7 @@
     <div id="map-overview" class="chart-panel"></div>
     <div id="chart-speed" class="chart-panel"></div>
     <div id="gcircle" class="chart-panel"></div>
+    <div id="diagnostics" class="chart-panel"></div>
   </main>
   <script type="module" src="/src/main.ts"></script>
 </body>
