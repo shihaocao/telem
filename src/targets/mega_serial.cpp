@@ -3,7 +3,7 @@
 constexpr int LED_PIN = LED_BUILTIN;
 
 constexpr uint32_t BLINK_PERIOD_MS = 500;
-constexpr uint32_t TELEMETRY_PERIOD_MS = 100; // 10 Hz
+constexpr uint32_t TELEMETRY_PERIOD_MS = 40; // 25 Hz
 
 // ECT (0-5V analog) pin A5
 // Throttle position sensor pin A6, analog 0-5V
