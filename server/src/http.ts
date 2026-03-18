@@ -1,4 +1,5 @@
 import * as http from "node:http";
+import { execSync } from "node:child_process";
 import { WalEngine, WalEntry } from "./wal.js";
 
 function cors(res: http.ServerResponse): void {
@@ -51,6 +52,12 @@ export function createServer(wal: WalEngine): http.Server {
           channels: wal.getChannelCounts(),
           generation: wal.currentGeneration,
         });
+      } else if (req.method === "GET" && pathname === "/cam/brightness") {
+        json(res, 200, handleCamGet("brightness"));
+      } else if (req.method === "POST" && pathname === "/cam/brightness/up") {
+        json(res, 200, handleCamAdjust("brightness", 5));
+      } else if (req.method === "POST" && pathname === "/cam/brightness/down") {
+        json(res, 200, handleCamAdjust("brightness", -5));
       } else if (req.method === "POST" && pathname === "/nuke") {
         await wal.nuke();
         json(res, 200, { ok: true });
@@ -178,4 +185,51 @@ function handleQuery(url: URL, res: http.ServerResponse, wal: WalEngine): void {
 
   const entries = wal.queryByChannel(channel, { startTs, endTs, afterSeq, limit });
   json(res, 200, { entries, count: entries.length });
+}
+
+// --- Camera controls (v4l2-ctl) ---
+
+let camDevice: string | null = null;
+
+function findCamDevice(): string | null {
+  if (camDevice) return camDevice;
+  try {
+    const devs = execSync("ls /dev/video* 2>/dev/null", { encoding: "utf-8" }).trim().split("\n");
+    for (const dev of devs) {
+      try {
+        const info = execSync(`v4l2-ctl -d ${dev} --all 2>/dev/null`, { encoding: "utf-8" });
+        if (info.includes("C930e")) {
+          camDevice = dev;
+          return dev;
+        }
+      } catch {}
+    }
+  } catch {}
+  return null;
+}
+
+function handleCamGet(ctrl: string): Record<string, unknown> {
+  const dev = findCamDevice();
+  if (!dev) return { error: "camera not found" };
+  try {
+    const out = execSync(`v4l2-ctl -d ${dev} --get-ctrl=${ctrl}`, { encoding: "utf-8" });
+    const val = parseInt(out.replace(/.*:\s*/, ""), 10);
+    return { [ctrl]: val };
+  } catch (err: any) {
+    return { error: err.message };
+  }
+}
+
+function handleCamAdjust(ctrl: string, delta: number): Record<string, unknown> {
+  const dev = findCamDevice();
+  if (!dev) return { error: "camera not found" };
+  try {
+    const out = execSync(`v4l2-ctl -d ${dev} --get-ctrl=${ctrl}`, { encoding: "utf-8" });
+    const cur = parseInt(out.replace(/.*:\s*/, ""), 10);
+    const next = Math.max(0, Math.min(255, cur + delta));
+    execSync(`v4l2-ctl -d ${dev} --set-ctrl=${ctrl}=${next}`);
+    return { [ctrl]: next };
+  } catch (err: any) {
+    return { error: err.message };
+  }
 }

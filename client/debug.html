@@ -52,6 +52,43 @@
       margin-left: 12px;
     }
     #back-link:hover { color: #ccc; }
+    #cam-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+      background: #13132a;
+      border: 1px solid #1e1e3a;
+      border-radius: 4px;
+      padding: 8px 14px;
+      width: fit-content;
+    }
+    .cam-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      color: rgba(255,255,255,0.4);
+    }
+    #cam-controls button {
+      background: transparent;
+      border: 1px solid #555;
+      color: #ccc;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 700;
+      width: 28px;
+      height: 28px;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    #cam-controls button:hover { background: #333; }
+    #bright-val {
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+      min-width: 30px;
+      text-align: center;
+    }
     #channels {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
@@ -90,6 +127,12 @@
 </head>
 <body>
   <h1>TELEMETRY DEBUG <span id="status">DISCONNECTED</span> <button id="nuke-btn">NUKE</button> <a href="/" id="back-link">DASHBOARD</a></h1>
+  <div id="cam-controls">
+    <span class="cam-label">CAM BRIGHTNESS</span>
+    <button id="bright-down">-</button>
+    <span id="bright-val">--</span>
+    <button id="bright-up">+</button>
+  </div>
   <div id="channels"></div>
   <script type="module">
     const SERVER_URL = (import.meta.env.VITE_SERVER_URL ?? "http://gearados-nx.tail62d295.ts.net:4400").replace(/\/$/, "");
@@ -187,6 +230,22 @@
         setTimeout(connect, 2000);
       };
     }
+
+    // Camera brightness controls
+    const brightVal = document.getElementById("bright-val");
+    async function camBrightness(action) {
+      try {
+        const url = action
+          ? `${SERVER_URL}/cam/brightness/${action}`
+          : `${SERVER_URL}/cam/brightness`;
+        const res = await fetch(url, { method: action ? "POST" : "GET" });
+        const data = await res.json();
+        if (data.brightness != null) brightVal.textContent = data.brightness;
+      } catch {}
+    }
+    document.getElementById("bright-up").addEventListener("click", () => camBrightness("up"));
+    document.getElementById("bright-down").addEventListener("click", () => camBrightness("down"));
+    camBrightness(null); // fetch initial value
 
     document.getElementById("nuke-btn").addEventListener("click", async () => {
       if (!confirm("Clear all telemetry data on the server?")) return;
