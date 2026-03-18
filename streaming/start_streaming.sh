@@ -50,7 +50,7 @@ detect_res() {
 PIDS=()
 for i in "${!DEVICES[@]}"; do
   dev="${DEVICES[$i]}"
-  port=$((BASE_PORT + i))
+  port=$((BASE_PORT + i * 2))
 
   res=$(detect_res "$dev")
   if [ "$res" = "none" ]; then
@@ -72,10 +72,10 @@ for i in "${!DEVICES[@]}"; do
 done
 
 # Separate audio stream from C930e mic
-AUDIO_PORT=$((BASE_PORT + ${#DEVICES[@]}))
+AUDIO_PORT=$((BASE_PORT + ${#DEVICES[@]} * 2))
 echo "Streaming audio (C930e) → udp://${TAILSCALE_HOST}:${AUDIO_PORT} ..."
 gst-launch-1.0 -e \
-  alsasrc device=hw:C930e,0 \
+  alsasrc device=hw:C930e,0 buffer-time=20000 latency-time=10000 \
   ! audioconvert ! audioresample \
   ! 'audio/x-raw,format=S16LE,rate=48000,channels=1' \
   ! udpsink host="${TAILSCALE_HOST}" port="${AUDIO_PORT}" sync=false &

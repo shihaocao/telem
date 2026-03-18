@@ -11,7 +11,7 @@ SDP_DIR="$(cd "$(dirname "$0")" && pwd)/sdp"
 mkdir -p "$SDP_DIR"
 
 for i in $(seq 0 $((NUM_STREAMS - 1))); do
-  port=$((BASE_PORT + i))
+  port=$((BASE_PORT + i * 2))
   cat > "$SDP_DIR/camera_$((i + 1)).sdp" <<EOF
 v=0
 m=video ${port} RTP/AVP 96
@@ -23,10 +23,12 @@ EOF
 done
 
 # Audio receiver — plays raw PCM from Jetson mic locally
-AUDIO_PORT=$((BASE_PORT + NUM_STREAMS))
+AUDIO_PORT=$((BASE_PORT + NUM_STREAMS * 2))
 echo "Receiving audio on udp://0.0.0.0:${AUDIO_PORT} ..."
 ffplay -nodisp -fflags nobuffer -flags low_delay \
-  -f s16le -ar 48000 -ac 1 \
+  -probesize 32 -analyzeduration 0 \
+  -f s16le -ar 48000 -ch_layout mono \
+  -infbuf -framedrop \
   "udp://0.0.0.0:${AUDIO_PORT}" &
 AUDIO_PID=$!
 
