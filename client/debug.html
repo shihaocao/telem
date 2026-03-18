@@ -3,89 +3,120 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Telemetry Debug</title>
+  <title>TELEMETRY DEBUG</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #0a0a0a;
+      --panel-bg: #0d0d12;
+      --border: rgba(255, 107, 53, 0.12);
+      --border-bright: rgba(255, 107, 53, 0.3);
+      --accent: #ff6b35;
+      --accent-dim: rgba(255, 107, 53, 0.5);
+      --red: #e74c3c;
+      --green: #2ecc71;
+      --amber: #d4a017;
+      --text: #c8bfa0;
+      --text-bright: #f0e6d0;
+      --text-dim: rgba(200, 191, 160, 0.35);
+    }
     body {
-      background: #0d0d1a;
-      color: #ccc;
+      background: var(--bg);
+      color: var(--text);
       font-family: "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
       font-size: 13px;
       padding: 16px;
     }
-    h1 {
-      font-size: 14px;
-      letter-spacing: 2px;
-      color: #eee;
-      margin-bottom: 16px;
+    /* scan lines */
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 9999;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, 0.06) 2px,
+        rgba(0, 0, 0, 0.06) 4px
+      );
     }
+    h1 {
+      font-size: 13px;
+      letter-spacing: 3px;
+      color: var(--accent);
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      text-shadow: 0 0 8px rgba(255, 107, 53, 0.15);
+    }
+    h1 .jp { font-size: 9px; color: var(--text-dim); letter-spacing: 2px; }
     #status {
       display: inline-block;
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 1px;
-      margin-left: 16px;
-      color: #e74c3c;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: var(--red);
     }
-    #status.live { color: #2ecc71; }
+    #status.live { color: var(--green); }
     #nuke-btn {
       background: transparent;
-      border: 1px solid #e74c3c;
-      color: #e74c3c;
+      border: 1px solid var(--red);
+      color: var(--red);
       font-family: inherit;
-      font-size: 10px;
+      font-size: 9px;
       font-weight: 700;
-      letter-spacing: 1px;
+      letter-spacing: 2px;
       padding: 3px 10px;
-      border-radius: 3px;
       cursor: pointer;
       text-transform: uppercase;
-      margin-left: 12px;
     }
-    #nuke-btn:hover { background: #e74c3c; color: #fff; }
+    #nuke-btn:hover { background: var(--red); color: #fff; }
     #back-link {
-      color: #666;
-      font-size: 10px;
+      color: rgba(255, 107, 53, 0.3);
+      font-size: 9px;
       font-weight: 700;
-      letter-spacing: 1px;
+      letter-spacing: 2px;
       text-decoration: none;
-      margin-left: 12px;
+      border: 1px solid rgba(255, 107, 53, 0.15);
+      padding: 3px 10px;
     }
-    #back-link:hover { color: #ccc; }
+    #back-link:hover { color: var(--accent); border-color: var(--accent-dim); }
     #cam-controls {
       display: flex;
       align-items: center;
       gap: 8px;
       margin-bottom: 16px;
-      background: #13132a;
-      border: 1px solid #1e1e3a;
-      border-radius: 4px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
       padding: 8px 14px;
       width: fit-content;
     }
     .cam-label {
-      font-size: 10px;
-      font-weight: 600;
-      letter-spacing: 1px;
-      color: rgba(255,255,255,0.4);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: var(--accent-dim);
     }
     #cam-controls button {
       background: transparent;
-      border: 1px solid #555;
-      color: #ccc;
+      border: 1px solid var(--border-bright);
+      color: var(--text);
       font-family: inherit;
       font-size: 14px;
       font-weight: 700;
       width: 28px;
       height: 28px;
-      border-radius: 3px;
       cursor: pointer;
     }
-    #cam-controls button:hover { background: #333; }
+    #cam-controls button:hover { background: rgba(255, 107, 53, 0.1); }
     #exp-val {
       font-size: 12px;
       font-weight: 700;
-      color: #fff;
+      color: var(--text-bright);
       min-width: 120px;
       text-align: center;
     }
@@ -99,21 +130,20 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      background: #13132a;
-      border: 1px solid #1e1e3a;
-      border-radius: 4px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
       padding: 8px 14px;
     }
     #last-update {
       font-size: 12px;
       font-weight: 700;
-      color: #fff;
+      color: var(--text-bright);
       min-width: 60px;
     }
     #latency-val {
       font-size: 12px;
       font-weight: 700;
-      color: #2ecc71;
+      color: var(--green);
       min-width: 50px;
     }
     #latency-canvas {
@@ -123,16 +153,35 @@
     #channels {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-      gap: 8px;
+      gap: 4px;
     }
     .ch {
-      background: #13132a;
-      border: 1px solid #1e1e3a;
-      border-radius: 4px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
       padding: 10px 14px;
       display: flex;
       flex-direction: column;
       gap: 4px;
+      position: relative;
+    }
+    /* corner bracket decoration */
+    .ch::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0;
+      width: 10px; height: 10px;
+      border-top: 1px solid var(--accent-dim);
+      border-left: 1px solid var(--accent-dim);
+      pointer-events: none;
+    }
+    .ch::after {
+      content: "";
+      position: absolute;
+      bottom: 0; right: 0;
+      width: 10px; height: 10px;
+      border-bottom: 1px solid var(--accent-dim);
+      border-right: 1px solid var(--accent-dim);
+      pointer-events: none;
     }
     .ch-header {
       display: flex;
@@ -140,15 +189,15 @@
       align-items: baseline;
     }
     .ch-name {
-      font-size: 11px;
-      font-weight: 600;
-      color: rgba(255,255,255,0.4);
-      letter-spacing: 1px;
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--accent-dim);
+      letter-spacing: 2px;
     }
     .ch-value {
       font-size: 20px;
       font-weight: 700;
-      color: #fff;
+      color: var(--text-bright);
     }
     .ch-canvas {
       width: 100%;
@@ -157,7 +206,12 @@
   </style>
 </head>
 <body>
-  <h1>TELEMETRY DEBUG <span id="status">DISCONNECTED</span> <button id="nuke-btn">NUKE</button> <a href="/" id="back-link">DASHBOARD</a></h1>
+  <h1>
+    TELEMETRY DEBUG <span class="jp">デバッグ端末</span>
+    <span id="status">DISCONNECTED</span>
+    <button id="nuke-btn">NUKE</button>
+    <a href="/" id="back-link">DASHBOARD</a>
+  </h1>
   <div id="debug-controls">
     <div id="cam-controls">
       <span class="cam-label">CAM EXPOSURE</span>
@@ -205,7 +259,7 @@
       const recent = latencyHistory.slice(-10);
       const avgMs = recent.length > 0 ? Math.round(recent.reduce((s, p) => s + p.ms, 0) / recent.length) : latencyMs;
       latencyValEl.textContent = `${avgMs}ms`;
-      latencyValEl.style.color = avgMs < 200 ? "#2ecc71" : avgMs < 1000 ? "#f1c40f" : "#e74c3c";
+      latencyValEl.style.color = avgMs < 200 ? "#2ecc71" : avgMs < 1000 ? "#d4a017" : "#e74c3c";
       drawLatencyChart();
     }
 
@@ -228,7 +282,7 @@
         if (i === 0) latencyCtx.moveTo(x, y);
         else latencyCtx.lineTo(x, y);
       }
-      latencyCtx.strokeStyle = "rgba(46, 204, 113, 0.7)";
+      latencyCtx.strokeStyle = "rgba(255, 107, 53, 0.6)";
       latencyCtx.lineWidth = 1.5;
       latencyCtx.stroke();
     }
@@ -295,7 +349,7 @@
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
-      ctx.strokeStyle = "rgba(52, 152, 219, 0.7)";
+      ctx.strokeStyle = "rgba(255, 107, 53, 0.5)";
       ctx.lineWidth = 1.5;
       ctx.stroke();
     }

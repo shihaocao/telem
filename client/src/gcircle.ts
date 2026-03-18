@@ -4,6 +4,16 @@ const MAX_G = 1.0;
 const TRAIL_LEN = 200;
 const RING_STEPS = [0.25, 0.5, 0.75, 1.0];
 
+// NERV colors
+const AMBER = "#ff6b35";
+const AMBER_DIM = "rgba(255, 107, 53, 0.08)";
+const AMBER_LINE = "rgba(255, 107, 53, 0.12)";
+const AMBER_TEXT = "rgba(255, 107, 53, 0.25)";
+const AMBER_LABEL = "rgba(255, 107, 53, 0.45)";
+const RED = "#e74c3c";
+const RED_DIM = (a: number) => `rgba(231, 76, 60, ${a})`;
+const TEXT_BRIGHT = "#f0e6d0";
+
 export interface GCirclePanel {
   update: () => void;
 }
@@ -83,12 +93,12 @@ export function createGCircle(
       const r = g * scale;
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(255,255,255,0.08)";
+      ctx.strokeStyle = AMBER_DIM;
       ctx.stroke();
     }
 
     // crosshair
-    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    ctx.strokeStyle = AMBER_LINE;
     ctx.beginPath();
     ctx.moveTo(cx - radius, cy);
     ctx.lineTo(cx + radius, cy);
@@ -96,8 +106,28 @@ export function createGCircle(
     ctx.lineTo(cx, cy + radius);
     ctx.stroke();
 
+    // tick marks on crosshair
+    ctx.strokeStyle = AMBER_LINE;
+    ctx.lineWidth = 1;
+    for (const g of RING_STEPS) {
+      const r = g * scale;
+      const tickLen = 3;
+      // horizontal ticks
+      ctx.beginPath();
+      ctx.moveTo(cx + r, cy - tickLen);
+      ctx.lineTo(cx + r, cy + tickLen);
+      ctx.moveTo(cx - r, cy - tickLen);
+      ctx.lineTo(cx - r, cy + tickLen);
+      // vertical ticks
+      ctx.moveTo(cx - tickLen, cy + r);
+      ctx.lineTo(cx + tickLen, cy + r);
+      ctx.moveTo(cx - tickLen, cy - r);
+      ctx.lineTo(cx + tickLen, cy - r);
+      ctx.stroke();
+    }
+
     // ring labels
-    ctx.fillStyle = "rgba(255,255,255,0.25)";
+    ctx.fillStyle = AMBER_TEXT;
     ctx.font = "9px monospace";
     ctx.textAlign = "left";
     ctx.textBaseline = "bottom";
@@ -106,7 +136,7 @@ export function createGCircle(
     }
 
     // axis labels
-    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    ctx.fillStyle = AMBER_LABEL;
     ctx.font = "bold 9px monospace";
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
@@ -122,29 +152,36 @@ export function createGCircle(
     // trail with decay
     for (let i = 0; i < trail.length; i++) {
       const t = trail[i];
-      const alpha = 0.05 + (i / trail.length) * 0.4;
+      const alpha = 0.03 + (i / trail.length) * 0.35;
       const px = cx + t.x * scale;
       const py = cy + t.y * scale;
       ctx.beginPath();
       ctx.arc(px, py, 1.5, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(231, 76, 60, ${alpha})`;
+      ctx.fillStyle = RED_DIM(alpha);
       ctx.fill();
     }
 
     // current point
     const px = cx + curX * scale;
     const py = cy + curY * scale;
+
+    // glow
+    ctx.beginPath();
+    ctx.arc(px, py, 8, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(231, 76, 60, 0.15)";
+    ctx.fill();
+
     ctx.beginPath();
     ctx.arc(px, py, 4, 0, Math.PI * 2);
-    ctx.fillStyle = "#e74c3c";
+    ctx.fillStyle = RED;
     ctx.fill();
-    ctx.strokeStyle = "#fff";
+    ctx.strokeStyle = AMBER;
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
     // magnitude text
     const mag = Math.sqrt(curX * curX + curY * curY);
-    ctx.fillStyle = "#ccc";
+    ctx.fillStyle = TEXT_BRIGHT;
     ctx.font = "bold 11px monospace";
     ctx.textAlign = "right";
     ctx.textBaseline = "top";

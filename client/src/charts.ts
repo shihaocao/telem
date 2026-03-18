@@ -5,9 +5,37 @@ export interface ChartPanel {
 }
 
 const KMH_TO_MPH = 0.621371;
-const MAX_MPH = 160;
+const MAX_MPH = 120;
 const MPH_SEGMENTS = 32;
 const TPS_SEGMENTS = 20;
+
+// Same color ramp as trail: red (slow) → amber → blue (fast)
+const SPEED_COLORS: [number, [number, number, number]][] = [
+  [0,   [231, 76, 60]],    // red
+  [80,  [255, 107, 53]],   // amber
+  [160, [52, 152, 219]],   // blue
+];
+
+function speedColor(mph: number): string {
+  const kmh = mph / KMH_TO_MPH;
+  if (kmh <= SPEED_COLORS[0][0]) {
+    const [r, g, b] = SPEED_COLORS[0][1];
+    return `rgb(${r},${g},${b})`;
+  }
+  for (let i = 1; i < SPEED_COLORS.length; i++) {
+    if (kmh <= SPEED_COLORS[i][0]) {
+      const [s0, c0] = SPEED_COLORS[i - 1];
+      const [s1, c1] = SPEED_COLORS[i];
+      const t = (kmh - s0) / (s1 - s0);
+      const r = Math.round(c0[0] + (c1[0] - c0[0]) * t);
+      const g = Math.round(c0[1] + (c1[1] - c0[1]) * t);
+      const b = Math.round(c0[2] + (c1[2] - c0[2]) * t);
+      return `rgb(${r},${g},${b})`;
+    }
+  }
+  const [r, g, b] = SPEED_COLORS[SPEED_COLORS.length - 1][1];
+  return `rgb(${r},${g},${b})`;
+}
 
 function createSegments(count: number, className: string): HTMLElement {
   const track = document.createElement("div");
@@ -20,35 +48,53 @@ function createSegments(count: number, className: string): HTMLElement {
   return track;
 }
 
-function updateSegments(track: HTMLElement, fraction: number): void {
+function updateSegments(track: HTMLElement, fraction: number, colorByIndex?: boolean): void {
   const segs = track.children;
   const lit = Math.round(fraction * segs.length);
+  const maxMph = MAX_MPH;
   for (let i = 0; i < segs.length; i++) {
-    segs[i].classList.toggle("seg-on", i < lit);
+    const el = segs[i] as HTMLElement;
+    const on = i < lit;
+    el.classList.toggle("seg-on", on);
+    if (on && colorByIndex) {
+      const segMph = ((i + 1) / segs.length) * maxMph;
+      const c = speedColor(segMph);
+      el.style.background = c;
+      el.style.borderColor = c;
+      el.style.boxShadow = `0 0 8px ${c}40, inset 0 0 4px ${c}4d`;
+    } else if (!on) {
+      el.style.background = "";
+      el.style.borderColor = "";
+      el.style.boxShadow = "";
+    }
   }
 }
 
 export function createPanels(mgr: TelemetryManager): ChartPanel[] {
   const container = document.getElementById("chart-speed")!;
 
-  container.innerHTML = `
-    <div class="gauges-container">
-      <div class="gauge">
-        <div class="gauge-header">
-          <span class="gauge-value" id="gauge-mph">--</span>
-          <span class="gauge-unit">MPH</span>
-        </div>
+  const inner = document.createElement("div");
+  inner.className = "gauges-container";
+  inner.innerHTML = `
+    <div class="gauge">
+      <div class="gauge-label">速度 <span class="gauge-label-jp">SPEED</span></div>
+      <div class="gauge-header">
+        <span class="gauge-value" id="gauge-mph">--</span>
+        <span class="gauge-unit">MPH</span>
       </div>
-      <div class="gauge">
-        <div class="gauge-header">
-          <span class="gauge-value" id="gauge-tps">--</span>
-          <span class="gauge-unit">% TPS</span>
-        </div>
+    </div>
+    <div class="gauge-divider"></div>
+    <div class="gauge">
+      <div class="gauge-label">出力 <span class="gauge-label-jp">THROTTLE</span></div>
+      <div class="gauge-header">
+        <span class="gauge-value" id="gauge-tps">--</span>
+        <span class="gauge-unit">% TPS</span>
       </div>
     </div>
   `;
+  container.appendChild(inner);
 
-  const gauges = container.querySelectorAll(".gauge");
+  const gauges = inner.querySelectorAll(".gauge");
 
   const mphTrack = createSegments(MPH_SEGMENTS, "seg-speed");
   gauges[0].appendChild(mphTrack);
@@ -64,7 +110,7 @@ export function createPanels(mgr: TelemetryManager): ChartPanel[] {
     if (speedSmoothed != null) {
       const mph = speedSmoothed * KMH_TO_MPH;
       mphVal.textContent = String(Math.round(mph));
-      updateSegments(mphTrack, Math.min(1, mph / MAX_MPH));
+      updateSegments(mphTrack, Math.min(1, mph / MAX_MPH), true);
     }
 
     const tpsSmoothed = mgr.getSmoothed("throttle_pos");

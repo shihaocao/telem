@@ -3,11 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Telemetry</title>
+  <title>MAGICARP MOTORS</title>
 </head>
 <body>
   <header id="status-bar">
-    <span class="title">TELEMETRY</span>
+    <div class="header-left">
+      <span class="title">MAGICARP MOTORS</span>
+      <span class="title-jp">作戦遠隔測定</span>
+      <span class="title-sub">SONOMA RACEWAY // 1992 ACCORD EX</span>
+    </div>
     <div class="status-group">
       <span class="stat">hdg <b id="stat-heading">--</b></span>
       <span class="stat">seq <b id="stat-seq">0</b></span>
@@ -17,12 +21,30 @@
     </div>
   </header>
   <main id="dashboard">
-    <div id="chart-speed" class="chart-panel"></div>
-    <div id="map-overview" class="chart-panel"></div>
-    <div id="gcircle" class="chart-panel small"></div>
-    <div id="map-follow" class="chart-panel small"></div>
-    <div id="diagnostics" class="chart-panel small"></div>
+    <div id="chart-speed" class="chart-panel">
+      <div class="panel-label">速度 <span class="panel-label-jp">VELOCITY</span></div>
+    </div>
+    <div id="map-overview" class="chart-panel">
+      <div class="panel-label">軌道 <span class="panel-label-jp">TRACK OVERVIEW</span></div>
+    </div>
+    <div id="gcircle" class="chart-panel small">
+      <div class="panel-label">加速度 <span class="panel-label-jp">G-FORCE</span></div>
+    </div>
+    <div id="map-follow" class="chart-panel small">
+      <div class="panel-label">位置 <span class="panel-label-jp">GPS FOLLOW</span></div>
+    </div>
+    <div id="diagnostics" class="chart-panel small">
+      <div class="panel-label">診断 <span class="panel-label-jp">DIAGNOSTICS</span></div>
+    </div>
   </main>
+  <footer id="footer-bar">
+    <span>MAGI SYSTEM // DATA ANALYZED BY CASPER</span>
+    <div class="footer-deco">
+      <span></span><span></span><span></span><span></span>
+      <span></span><span></span><span></span><span></span>
+    </div>
+    <span>ネルフ本部遠隔測定監視</span>
+  </footer>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

@@ -18,7 +18,7 @@ function arg(name: string, fallback: string): string {
 }
 
 const BASE_URL = arg("url", "http://localhost:4400");
-const HZ = parseInt(arg("hz", "50"), 10);
+const HZ = parseInt(arg("hz", "25"), 10);
 const DURATION_S = parseInt(arg("duration", "0"), 10); // 0 = run forever
 
 // Sonoma Raceway simplified track polyline (subset of full track)
@@ -87,39 +87,84 @@ function getTrackPos(dist: number): { lat: number; lon: number; heading: number 
 
 // track segment types based on curvature
 type SegmentType = "straight" | "braking" | "corner" | "corner_exit";
-interface Segment { type: SegmentType; duration: number; }
+interface Segment {
+  type: SegmentType;
+  duration: number;
+  targetSpeed?: number;   // km/h target for corners/braking
+  lateralG?: number;      // lateral g-force in corners
+  topSpeed?: number;      // km/h ceiling for straights
+}
 
+// Model Sonoma Raceway lap: main straight → T1 → T2 → esses → T4 → T5(hairpin)
+// → T6(fast) → carousel → T8/9(downhill tight) → T10 → chute → T11 → main straight
 const TRACK_SEGMENTS: Segment[] = [
-  { type: "straight", duration: 6 },
-  { type: "braking", duration: 1.5 },
-  { type: "corner", duration: 3 },
-  { type: "corner_exit", duration: 2 },
-  { type: "straight", duration: 4 },
-  { type: "braking", duration: 1.2 },
-  { type: "corner", duration: 2.5 },
-  { type: "corner_exit", duration: 1.8 },
-  { type: "straight", duration: 8 },
-  { type: "braking", duration: 2 },
-  { type: "corner", duration: 4 },
-  { type: "corner_exit", duration: 2.5 },
-  { type: "straight", duration: 3 },
-  { type: "braking", duration: 1 },
-  { type: "corner", duration: 2 },
-  { type: "corner_exit", duration: 1.5 },
+  // main straight (S/F → T1)
+  { type: "straight", duration: 7, topSpeed: 190 },
+  // T1 — medium right, brake from 190 to 110
+  { type: "braking", duration: 1.5, targetSpeed: 110 },
+  { type: "corner", duration: 2.5, targetSpeed: 100, lateralG: 0.7 },
+  { type: "corner_exit", duration: 1.5, topSpeed: 130 },
+  // T2 — hard left downhill
+  { type: "braking", duration: 1.2, targetSpeed: 75 },
+  { type: "corner", duration: 2, targetSpeed: 70, lateralG: 0.85 },
+  { type: "corner_exit", duration: 1.2, topSpeed: 110 },
+  // T3/T3a — uphill esses (fast, flowing)
+  { type: "corner", duration: 1.5, targetSpeed: 105, lateralG: 0.5 },
+  { type: "corner", duration: 1.5, targetSpeed: 100, lateralG: -0.55 },
+  // short straight to T4
+  { type: "straight", duration: 2, topSpeed: 130 },
+  // T4 — medium right
+  { type: "braking", duration: 1, targetSpeed: 85 },
+  { type: "corner", duration: 2, targetSpeed: 80, lateralG: 0.7 },
+  { type: "corner_exit", duration: 1, topSpeed: 100 },
+  // T5 — hairpin left (slowest corner)
+  { type: "braking", duration: 1.5, targetSpeed: 50 },
+  { type: "corner", duration: 2.5, targetSpeed: 45, lateralG: -0.9 },
+  { type: "corner_exit", duration: 2, topSpeed: 120 },
+  // T6 — fast sweeping right
+  { type: "corner", duration: 2, targetSpeed: 120, lateralG: 0.6 },
+  // T7/T7a — carousel (sustained medium speed)
+  { type: "braking", duration: 0.8, targetSpeed: 80 },
+  { type: "corner", duration: 3.5, targetSpeed: 75, lateralG: 0.75 },
+  { type: "corner_exit", duration: 1, topSpeed: 95 },
+  // T8/T8a/T9 — tight downhill section
+  { type: "braking", duration: 1.2, targetSpeed: 55 },
+  { type: "corner", duration: 1.5, targetSpeed: 55, lateralG: -0.8 },
+  { type: "corner", duration: 1.5, targetSpeed: 60, lateralG: 0.7 },
+  { type: "corner_exit", duration: 1, topSpeed: 90 },
+  // T10 — hard right onto the chute
+  { type: "braking", duration: 1, targetSpeed: 55 },
+  { type: "corner", duration: 1.5, targetSpeed: 50, lateralG: 0.85 },
+  { type: "corner_exit", duration: 1.5, topSpeed: 110 },
+  // short chute
+  { type: "straight", duration: 2, topSpeed: 130 },
+  // T11 — left onto main straight
+  { type: "braking", duration: 1, targetSpeed: 90 },
+  { type: "corner", duration: 1.5, targetSpeed: 85, lateralG: -0.65 },
+  { type: "corner_exit", duration: 2, topSpeed: 160 },
 ];
 
 const LAP_DURATION = TRACK_SEGMENTS.reduce((s, seg) => s + seg.duration, 0);
 
-function getSegment(t: number): { seg: Segment; progress: number } {
+function getSegment(t: number): { seg: Segment; progress: number; prevLateralG: number } {
   const lapT = t % LAP_DURATION;
   let elapsed = 0;
-  for (const seg of TRACK_SEGMENTS) {
+  for (let i = 0; i < TRACK_SEGMENTS.length; i++) {
+    const seg = TRACK_SEGMENTS[i];
     if (lapT < elapsed + seg.duration) {
-      return { seg, progress: (lapT - elapsed) / seg.duration };
+      // find the most recent lateralG from a preceding corner segment
+      let prevLateralG = 0;
+      for (let j = i - 1; j >= 0; j--) {
+        if (TRACK_SEGMENTS[j].lateralG != null) {
+          prevLateralG = TRACK_SEGMENTS[j].lateralG!;
+          break;
+        }
+      }
+      return { seg, progress: (lapT - elapsed) / seg.duration, prevLateralG };
     }
     elapsed += seg.duration;
   }
-  return { seg: TRACK_SEGMENTS[TRACK_SEGMENTS.length - 1], progress: 1 };
+  return { seg: TRACK_SEGMENTS[TRACK_SEGMENTS.length - 1], progress: 1, prevLateralG: 0 };
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -143,39 +188,58 @@ let coolantTemp = 85;  // °C — warms up then stabilizes
 let mapKpa = 40;       // manifold pressure kPa
 let trackDist = 0;     // cumulative distance along track
 
-function step(dt: number, seg: Segment, progress: number): void {
+function step(dt: number, seg: Segment, progress: number, prevLateralG: number): void {
+  const target = seg.targetSpeed ?? 100;
+  const top = seg.topSpeed ?? 200;
+  const latG = seg.lateralG ?? prevLateralG;
+
   switch (seg.type) {
-    case "straight":
-      throttlePos = lerp(throttlePos, clamp(90 + Math.random() * 10, 90, 100), dt * 4);
-      speed = lerp(speed, clamp(speed + 40 * dt, 80, 200), dt * 2);
-      gForceX = lerp(gForceX, jitter(0.3, 0.05), dt * 5);
-      gForceY = lerp(gForceY, jitter(0, 0.05), dt * 5);
-      mapKpa = lerp(mapKpa, clamp(85 + throttlePos * 0.15, 70, 101), dt * 3);
+    case "straight": {
+      // progressive throttle, accelerate toward top speed
+      const accelRate = speed < 100 ? 50 : 30; // faster accel at low speed
+      throttlePos = lerp(throttlePos, clamp(85 + Math.random() * 15, 85, 100), dt * 5);
+      speed = lerp(speed, clamp(speed + accelRate * dt, speed, top), dt * 2.5);
+      gForceX = lerp(gForceX, jitter(0.2 + (top - speed) / top * 0.3, 0.04), dt * 5);
+      gForceY = lerp(gForceY, jitter(0, 0.03), dt * 6);
+      mapKpa = lerp(mapKpa, clamp(80 + throttlePos * 0.2, 70, 101), dt * 3);
       break;
+    }
 
-    case "braking":
-      throttlePos = lerp(throttlePos, 0, dt * 12);
-      speed = lerp(speed, clamp(speed - 120 * dt, 60, 200), dt * 4);
-      gForceX = lerp(gForceX, jitter(-0.8 - progress * 0.3, 0.05), dt * 6);
-      gForceY = lerp(gForceY, jitter(0, 0.1), dt * 4);
-      mapKpa = lerp(mapKpa, 25, dt * 5);
+    case "braking": {
+      // hard braking — throttle off, decelerate to target
+      throttlePos = lerp(throttlePos, 0, dt * 15);
+      const brakingForce = (speed - target) / (seg.duration * 0.7); // decel rate
+      speed = lerp(speed, target, dt * 4);
+      const brakeG = -clamp(brakingForce / 30, 0.3, 1.2);
+      gForceX = lerp(gForceX, jitter(brakeG, 0.05), dt * 8);
+      gForceY = lerp(gForceY, jitter(0, 0.08), dt * 4);
+      mapKpa = lerp(mapKpa, 22, dt * 6);
       break;
+    }
 
-    case "corner":
-      throttlePos = lerp(throttlePos, clamp(20 + progress * 30, 15, 60), dt * 5);
-      speed = lerp(speed, clamp(80 + progress * 30, 60, 140), dt * 3);
-      gForceX = lerp(gForceX, jitter(0.1, 0.05), dt * 4);
-      gForceY = lerp(gForceY, jitter(0.6 + progress * 0.3, 0.08), dt * 4);
-      mapKpa = lerp(mapKpa, 35 + throttlePos * 0.3, dt * 3);
+    case "corner": {
+      // maintain corner speed, partial throttle
+      const tpsTarget = 15 + (target / 200) * 40 + progress * 15;
+      throttlePos = lerp(throttlePos, clamp(tpsTarget, 10, 65), dt * 5);
+      speed = lerp(speed, target + progress * 10, dt * 4);
+      gForceX = lerp(gForceX, jitter(0.05, 0.04), dt * 5);
+      gForceY = lerp(gForceY, jitter(latG, 0.06), dt * 5);
+      mapKpa = lerp(mapKpa, 30 + throttlePos * 0.35, dt * 3);
       break;
+    }
 
-    case "corner_exit":
-      throttlePos = lerp(throttlePos, clamp(50 + progress * 50, 50, 100), dt * 4);
-      speed = lerp(speed, clamp(speed + 30 * dt, 80, 200), dt * 2);
-      gForceX = lerp(gForceX, jitter(0.4, 0.05), dt * 5);
-      gForceY = lerp(gForceY, jitter(0.3 - progress * 0.3, 0.05), dt * 5);
-      mapKpa = lerp(mapKpa, 50 + throttlePos * 0.4, dt * 3);
+    case "corner_exit": {
+      // progressive throttle application, unwinding steering
+      const exitTps = 40 + progress * 60;
+      throttlePos = lerp(throttlePos, clamp(exitTps, 40, 100), dt * 4);
+      speed = lerp(speed, clamp(speed + 35 * dt, speed, top), dt * 2.5);
+      gForceX = lerp(gForceX, jitter(0.3 + progress * 0.2, 0.04), dt * 5);
+      // lateral g unwinds through exit
+      const exitLatG = latG * (1 - progress * 0.8);
+      gForceY = lerp(gForceY, jitter(exitLatG, 0.04), dt * 5);
+      mapKpa = lerp(mapKpa, 45 + throttlePos * 0.45, dt * 3);
       break;
+    }
   }
 
   // coolant slowly warms to operating temp then holds
@@ -184,7 +248,7 @@ function step(dt: number, seg: Segment, progress: number): void {
 
   // clamp
   throttlePos = clamp(throttlePos, 0, 100);
-  speed = clamp(speed, 30, 220);
+  speed = clamp(speed, 20, 220);
   gForceX = clamp(gForceX, -1.5, 1.5);
   gForceY = clamp(gForceY, -1.5, 1.5);
   mapKpa = clamp(mapKpa, 20, 101);
@@ -261,8 +325,8 @@ async function main(): Promise<void> {
   const maxTicks = DURATION_S ? HZ * DURATION_S : Infinity;
 
   for (let i = 0; i < maxTicks; i++) {
-    const { seg, progress } = getSegment(t);
-    step(dt, seg, progress);
+    const { seg, progress, prevLateralG } = getSegment(t);
+    step(dt, seg, progress, prevLateralG);
     const ts = Date.now();
 
     const pos = getTrackPos(trackDist);

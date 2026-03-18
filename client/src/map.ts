@@ -5,9 +5,9 @@ import { TelemetryManager } from "./telemetry";
 import { SONOMA_TRACK, TRACK_CENTER, TRACK_ZOOM, FINISH_LINE, TURNS } from "./track";
 
 const TRAIL_MAX = 3000;
-const TRAIL_COLOR = "#e74c3c";
-const TRACK_OUTLINE_COLOR = "rgba(255,255,255,0.35)";
-const MARKER_COLOR = "#fff";
+const TRAIL_COLOR = "#ff6b35";
+const TRACK_OUTLINE_COLOR = "rgba(255, 107, 53, 0.5)";
+const MARKER_COLOR = "#ff6b35";
 const DECAY_SEGMENTS = 20;
 
 const TILES = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
@@ -52,36 +52,72 @@ export interface MapPanels {
   update: () => void;
 }
 
-function zoomForSpeed(kmh: number): number {
-  if (kmh < 10) return 18;
-  if (kmh < 60) return 17;
-  if (kmh < 120) return 16;
-  if (kmh < 200) return 15;
-  return 14;
+
+// Speed-to-color: red (0 km/h) → amber (80 km/h) → blue (160+ km/h)
+const SPEED_COLORS: [number, [number, number, number]][] = [
+  [0,   [231, 76, 60]],    // red (slow)
+  [80,  [255, 107, 53]],   // amber
+  [160, [52, 152, 219]],   // blue (fast)
+];
+
+function speedToColor(kmh: number): string {
+  if (kmh <= SPEED_COLORS[0][0]) {
+    const [r, g, b] = SPEED_COLORS[0][1];
+    return `rgb(${r},${g},${b})`;
+  }
+  for (let i = 1; i < SPEED_COLORS.length; i++) {
+    if (kmh <= SPEED_COLORS[i][0]) {
+      const [s0, c0] = SPEED_COLORS[i - 1];
+      const [s1, c1] = SPEED_COLORS[i];
+      const t = (kmh - s0) / (s1 - s0);
+      const r = Math.round(c0[0] + (c1[0] - c0[0]) * t);
+      const g = Math.round(c0[1] + (c1[1] - c0[1]) * t);
+      const b = Math.round(c0[2] + (c1[2] - c0[2]) * t);
+      return `rgb(${r},${g},${b})`;
+    }
+  }
+  const [r, g, b] = SPEED_COLORS[SPEED_COLORS.length - 1][1];
+  return `rgb(${r},${g},${b})`;
 }
 
-/** Splits coords into N segments with decaying opacity (newest = most opaque) */
-function buildDecayTrail(
+// Group consecutive coords by similar speed into segments, with age-based opacity
+const MAX_TRAIL_SEGMENTS = 60;
+
+function buildSpeedTrail(
   map: L.Map,
   coords: [number, number][],
+  speeds: number[],
   existing: L.Polyline[],
 ): L.Polyline[] {
   for (const p of existing) p.remove();
   if (coords.length < 2) return [];
 
   const segments: L.Polyline[] = [];
-  const chunkSize = Math.max(1, Math.ceil(coords.length / DECAY_SEGMENTS));
 
-  for (let i = 0; i < DECAY_SEGMENTS; i++) {
-    const start = i * chunkSize;
-    const end = Math.min(start + chunkSize + 1, coords.length);
-    if (start >= coords.length) break;
-    const slice = coords.slice(start, end);
+  // bucket into groups of ~equal size to limit segment count
+  const bucketSize = Math.max(1, Math.ceil(coords.length / MAX_TRAIL_SEGMENTS));
+
+  for (let b = 0; b < coords.length - 1; b += bucketSize) {
+    const end = Math.min(b + bucketSize + 1, coords.length);
+    const slice = coords.slice(b, end);
     if (slice.length < 2) continue;
 
-    const opacity = 0.08 + (i / (DECAY_SEGMENTS - 1)) * 0.92;
+    // average speed for this bucket
+    let sum = 0;
+    let cnt = 0;
+    for (let j = b; j < Math.min(b + bucketSize, speeds.length); j++) {
+      sum += speeds[j];
+      cnt++;
+    }
+    const avgSpeed = cnt > 0 ? sum / cnt : 0;
+    const color = speedToColor(avgSpeed);
+
+    // age-based opacity
+    const midIdx = (b + Math.min(b + bucketSize, coords.length - 1)) / 2;
+    const opacity = 0.15 + (midIdx / (coords.length - 1)) * 0.85;
+
     const line = L.polyline(slice as L.LatLngExpression[], {
-      color: TRAIL_COLOR,
+      color,
       weight: 2.5,
       opacity,
     }).addTo(map);
@@ -102,16 +138,13 @@ export function createMaps(
   }).setView([0, 0], 2);
   L.tileLayer(TILES, TILE_OPTS).addTo(followMap);
 
-  const followTrail = L.polyline([], {
-    color: TRAIL_COLOR,
-    weight: 2.5,
-  }).addTo(followMap);
+  let followTrailSegments: L.Polyline[] = [];
 
   function makeArrowIcon(heading: number): L.DivIcon {
     return L.divIcon({
       className: "car-arrow",
       html: `<svg width="20" height="20" viewBox="0 0 20 20" style="transform:rotate(${heading}deg)">
-        <polygon points="10,2 16,16 10,12 4,16" fill="${TRAIL_COLOR}" stroke="${MARKER_COLOR}" stroke-width="1.5"/>
+        <polygon points="10,2 16,16 10,12 4,16" fill="#e74c3c" stroke="${MARKER_COLOR}" stroke-width="1.5"/>
       </svg>`,
       iconSize: [20, 20],
       iconAnchor: [10, 10],
@@ -185,6 +218,8 @@ export function createMaps(
   let lastLat = 0;
   let lastLon = 0;
   let lastLen = 0;
+  let lastMapUpdate = 0;
+  const MAP_UPDATE_INTERVAL = 100; // ms — throttle map pans to 10Hz
 
   function update(): void {
     const latBuf = mgr.getBuffer("gps_lat");
@@ -201,13 +236,22 @@ export function createMaps(
     lastLon = lon;
     lastLen = len;
 
-    // build coordinate array
+    const now = performance.now();
+    if (now - lastMapUpdate < MAP_UPDATE_INTERVAL) return;
+    lastMapUpdate = now;
+
+    // build coordinate + speed arrays
+    const speedBuf = mgr.getBuffer("gps_speed") ?? mgr.getBuffer("speed");
     const start = Math.max(0, len - TRAIL_MAX);
     const coords: [number, number][] = [];
+    const speeds: number[] = [];
     for (let i = start; i < len; i++) {
       const la = latBuf.values[i];
       const lo = lonBuf.values[i];
-      if (la !== 0 || lo !== 0) coords.push([la, lo]);
+      if (la !== 0 || lo !== 0) {
+        coords.push([la, lo]);
+        speeds.push(speedBuf && i < speedBuf.values.length ? speedBuf.values[i] : 0);
+      }
     }
 
     // read heading
@@ -223,28 +267,20 @@ export function createMaps(
     }
 
     // --- update follow map ---
-    followTrail.setLatLngs(coords as L.LatLngExpression[]);
+    followTrailSegments = buildSpeedTrail(followMap, coords, speeds, followTrailSegments);
     followMarker.setLatLng([lat, lon]);
-
-    const speedBuf = mgr.getBuffer("gps_speed") ?? mgr.getBuffer("speed");
-    const speed = speedBuf?.values.length ? speedBuf.values[speedBuf.values.length - 1] : 0;
-    const targetZoom = zoomForSpeed(speed);
 
     if (!followHasPos) {
       followMarker.addTo(followMap);
-      followZoom = targetZoom;
       followMap.setView([lat, lon], followZoom);
       followHasPos = true;
-    } else if (targetZoom !== followZoom) {
-      followZoom = targetZoom;
-      followMap.setView([lat, lon], followZoom, { animate: false });
     } else {
       followMap.panTo([lat, lon], { animate: false });
     }
 
     // --- update overview map (snap GPS to track centerline) ---
     const snappedCoords = coords.map(([la, lo]) => snapToTrack(la, lo));
-    overviewTrailSegments = buildDecayTrail(overviewMap, snappedCoords, overviewTrailSegments);
+    overviewTrailSegments = buildSpeedTrail(overviewMap, snappedCoords, speeds, overviewTrailSegments);
     const [sLat, sLon] = snapToTrack(lat, lon);
     overviewMarker.setLatLng([sLat, sLon]);
     if (!overviewMap.hasLayer(overviewMarker)) {

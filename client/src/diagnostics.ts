@@ -6,16 +6,22 @@ export interface DiagPanel {
 
 const SPARK_POINTS = 100;
 
+// NERV colors
+const AMBER = "rgb(255, 107, 53)";
+const RED = "rgb(231, 76, 60)";
+
 interface DiagCell {
   channel: string;
   label: string;
   unit: string;
   valueEl: HTMLElement;
+  cellEl: HTMLElement;
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
   color: string;
   min: number;
   max: number;
+  warnAbove?: number;
 }
 
 function drawSparkline(
@@ -52,7 +58,7 @@ function drawSparkline(
   ctx.lineTo(w, h);
   ctx.lineTo(0, h);
   ctx.closePath();
-  ctx.fillStyle = color.replace(")", ", 0.08)").replace("rgb", "rgba");
+  ctx.fillStyle = color.replace(")", ", 0.06)").replace("rgb", "rgba");
   ctx.fill();
 }
 
@@ -64,6 +70,7 @@ function createCell(
   color: string,
   min: number,
   max: number,
+  warnAbove?: number,
 ): DiagCell {
   const cell = document.createElement("div");
   cell.className = "diag-cell";
@@ -86,11 +93,13 @@ function createCell(
     label,
     unit,
     valueEl: cell.querySelector(".diag-cell-value") as HTMLElement,
+    cellEl: cell,
     canvas,
     ctx: canvas.getContext("2d")!,
     color,
     min,
     max,
+    warnAbove,
   };
 }
 
@@ -102,8 +111,8 @@ export function createDiagnostics(
   const grid = container.querySelector(".diag-grid") as HTMLElement;
 
   const cells: DiagCell[] = [
-    createCell(grid, "coolant_temp", "COOLANT", "\u00B0C", "rgb(231, 76, 60)", 0, 130),
-    createCell(grid, "manifold_pressure", "MAP", "kPa", "rgb(52, 152, 219)", 0, 110),
+    createCell(grid, "coolant_temp", "冷却 COOLANT", "\u00B0C", RED, 0, 130, 100),
+    createCell(grid, "manifold_pressure", "圧力 MAP", "kPa", AMBER, 0, 110),
   ];
 
   function update(): void {
@@ -114,6 +123,11 @@ export function createDiagnostics(
       const smoothed = mgr.getSmoothed(cell.channel) ?? buf.values[buf.values.length - 1];
       cell.valueEl.textContent = String(Math.round(smoothed));
       drawSparkline(cell, buf.values);
+
+      // warning state
+      if (cell.warnAbove != null) {
+        cell.cellEl.classList.toggle("warning", smoothed > cell.warnAbove);
+      }
     }
   }
 
