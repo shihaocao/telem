@@ -1,0 +1,506 @@
+import "./review.css";
+import { propagateQueryParams } from "./nav";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+import "leaflet-rotate";
+import { TRACKS, type TrackDef } from "./track";
+import { speedToColor, throttleToColor } from "./track-utils";
+
+const REMOTE_URL = ((import.meta.env.VITE_SERVER_URL as string) ?? "http://gearados-nx.tail62d295.ts.net:4400").replace(/\/$/, "");
+const LOCAL_URL = "http://localhost:4400";
+const isLocal = new URLSearchParams(window.location.search).has("local");
+const SERVER_URL = isLocal ? LOCAL_URL : REMOTE_URL;
+
+const TILES_NOLABELS = "https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png";
+const TILES_SAT = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+const TILE_OPTS: L.TileLayerOptions = { maxZoom: 20, subdomains: "abcd" };
+const TILE_OPTS_SAT: L.TileLayerOptions = { maxZoom: 20 };
+
+interface Lap { lap: number; time: number; flag: "clean" | "yellow" | "pit"; track: string; startSeq: number; endSeq: number; }
+interface Session { id: string; track: string; driver: string; createdAt: number; running: boolean; laps: Lap[]; }
+interface WalEntry { seq: number; ts: number; channel: string; value: number; }
+
+// ── State ──
+const params = new URLSearchParams(window.location.search);
+const trackId = params.get("track") ?? "sonoma";
+let trackDef: TrackDef = TRACKS[trackId] ?? TRACKS.sonoma;
+
+let sessions: Session[] = [];
+let session: Session | null = null;
+let selectedLapIdx = -1;
+let lapEntries: WalEntry[] = [];
+let lapCoords: [number, number][] = [];
+let lapSpeeds: number[] = [];
+let lapThrottles: number[] = [];
+let lapGx: number[] = [];
+let lapGy: number[] = [];
+let lapTimestamps: number[] = [];
+let trailMode: "speed" | "throttle" = "speed";
+
+const KMH_TO_MPH = 0.621371;
+const MAX_MPH = 120;
+const SPEED_SEGS = 24;
+const TPS_SEGS = 16;
+
+// ── DOM ──
+const metaEl = document.getElementById("review-meta")!;
+const sessionListEl = document.getElementById("review-session-list")!;
+const lapListEl = document.getElementById("review-lap-list")!;
+const mapEl = document.getElementById("review-map")!;
+const gcircleEl = document.getElementById("review-gcircle")!;
+const gaugesEl = document.getElementById("review-gauges")!;
+const legendEl = document.getElementById("review-legend")!;
+const seekEl = document.getElementById("review-seek") as HTMLInputElement;
+const seekTimeEl = document.getElementById("review-seek-time")!;
+
+// ── Trail mode toggles ──
+const trailModeBtns = document.querySelectorAll(".trail-mode-btn");
+trailModeBtns.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    trailMode = (btn as HTMLElement).dataset.mode as typeof trailMode;
+    trailModeBtns.forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    drawTrail();
+    renderLegend();
+  });
+});
+
+// ── Map ──
+const map = L.map(mapEl, {
+  zoomControl: true,
+  attributionControl: false,
+  rotate: true,
+  rotateControl: false,
+  shiftKeyRotate: false,
+  bearing: trackDef.bearing,
+} as any).setView(trackDef.center, trackDef.zoom);
+let darkTiles = L.tileLayer(TILES_NOLABELS, TILE_OPTS).addTo(map);
+let satTiles = L.tileLayer(TILES_SAT, TILE_OPTS_SAT);
+let isSat = false;
+
+const satToggle = document.getElementById("review-sat-toggle")!;
+satToggle.addEventListener("click", () => {
+  isSat = !isSat;
+  satToggle.classList.toggle("active", isSat);
+  if (isSat) {
+    map.removeLayer(darkTiles);
+    satTiles.addTo(map);
+  } else {
+    map.removeLayer(satTiles);
+    darkTiles.addTo(map);
+  }
+});
+
+new ResizeObserver(() => map.invalidateSize()).observe(mapEl);
+
+let trackOverlays: L.Layer[] = [];
+function drawTrackOverlays() {
+  for (const l of trackOverlays) map.removeLayer(l);
+  trackOverlays = [];
+  trackOverlays.push(L.polyline(trackDef.track as L.LatLngExpression[], { color: "rgba(255,255,255,0.3)", weight: 1.2, dashArray: "4 4" }).addTo(map));
+  trackOverlays.push(L.marker(trackDef.finishLine, { icon: L.divIcon({ className: "turn-label sf-label", html: "S/F", iconSize: [24, 14], iconAnchor: [12, 7] }), interactive: false }).addTo(map));
+  for (const t of trackDef.turns) {
+    trackOverlays.push(L.marker(t.pos, { icon: L.divIcon({ className: "turn-label", html: t.label, iconSize: [20, 14], iconAnchor: [10, 7] }), interactive: false }).addTo(map));
+  }
+}
+drawTrackOverlays();
+
+let trailLines: L.Polyline[] = [];
+let posMarker: L.Marker | null = null;
+
+// ── G-force canvas ──
+const gCanvas = document.createElement("canvas");
+gcircleEl.appendChild(gCanvas);
+const gCtx = gCanvas.getContext("2d")!;
+let gW = 0, gH = 0;
+
+new ResizeObserver((entries) => {
+  for (const entry of entries) {
+    const r = entry.contentRect;
+    const dpr = window.devicePixelRatio || 1;
+    gW = r.width; gH = r.height;
+    gCanvas.width = gW * dpr; gCanvas.height = gH * dpr;
+    gCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+}).observe(gcircleEl);
+
+const MAX_G = 1.0;
+const RING_STEPS = [0.25, 0.5, 0.75, 1.0];
+
+function drawGCircle(gx: number, gy: number) {
+  if (gW === 0 || gH === 0) return;
+  gCtx.clearRect(0, 0, gW, gH);
+
+  const cx = gW / 2, cy = gH / 2;
+  const radius = Math.min(cx, cy) - 20;
+  const scale = radius / MAX_G;
+  const latG = gy;  // lateral = x axis
+  const lonG = -gx; // braking(+) = up
+
+  // rings
+  gCtx.lineWidth = 1;
+  for (const g of RING_STEPS) {
+    gCtx.beginPath();
+    gCtx.arc(cx, cy, g * scale, 0, Math.PI * 2);
+    gCtx.strokeStyle = "rgba(255,255,255,0.06)";
+    gCtx.stroke();
+  }
+
+  // crosshair
+  gCtx.strokeStyle = "rgba(255,255,255,0.1)";
+  gCtx.beginPath();
+  gCtx.moveTo(cx - radius, cy); gCtx.lineTo(cx + radius, cy);
+  gCtx.moveTo(cx, cy - radius); gCtx.lineTo(cx, cy + radius);
+  gCtx.stroke();
+
+  // labels
+  gCtx.fillStyle = "rgba(255,255,255,0.2)";
+  gCtx.font = "9px monospace";
+  gCtx.textAlign = "left"; gCtx.textBaseline = "bottom";
+  for (const g of RING_STEPS) gCtx.fillText(`${g}g`, cx + 3, cy - g * scale - 2);
+
+  gCtx.fillStyle = "rgba(255,107,53,0.5)";
+  gCtx.font = "bold 8px monospace";
+  gCtx.textAlign = "center";
+  gCtx.textBaseline = "top"; gCtx.fillText("BRK", cx, cy - radius - 14);
+  gCtx.textBaseline = "bottom"; gCtx.fillText("ACC", cx, cy + radius + 14);
+  gCtx.textAlign = "left"; gCtx.textBaseline = "middle"; gCtx.fillText("L", cx - radius - 12, cy);
+  gCtx.textAlign = "right"; gCtx.fillText("R", cx + radius + 12, cy);
+
+  // dot
+  const px = cx + latG * scale;
+  const py = cy + lonG * scale;
+  gCtx.beginPath(); gCtx.arc(px, py, 6, 0, Math.PI * 2);
+  gCtx.fillStyle = "rgba(255,107,53,0.12)"; gCtx.fill();
+  gCtx.beginPath(); gCtx.arc(px, py, 3.5, 0, Math.PI * 2);
+  gCtx.fillStyle = "#ff6b35"; gCtx.fill();
+  gCtx.strokeStyle = "#fff"; gCtx.lineWidth = 1.5; gCtx.stroke();
+
+  // magnitude
+  const mag = Math.sqrt(latG * latG + lonG * lonG);
+  gCtx.fillStyle = "#eee"; gCtx.font = "bold 11px monospace";
+  gCtx.textAlign = "right"; gCtx.textBaseline = "top";
+  gCtx.fillText(`${mag.toFixed(2)}g`, gW - 6, 6);
+}
+
+// ── Gauges ──
+function makeSegTrack(count: number): HTMLElement {
+  const track = document.createElement("div");
+  track.className = "review-seg-track";
+  for (let i = 0; i < count; i++) {
+    const seg = document.createElement("div");
+    seg.className = "review-seg";
+    track.appendChild(seg);
+  }
+  return track;
+}
+
+// Speed gauge
+const speedGauge = document.createElement("div");
+speedGauge.className = "review-gauge";
+speedGauge.innerHTML = `<div class="review-gauge-label">速度 SPEED</div><div class="review-gauge-header"><span class="review-gauge-value" id="rv-speed">--</span><span class="review-gauge-unit">MPH</span></div>`;
+const speedSegTrack = makeSegTrack(SPEED_SEGS);
+speedGauge.appendChild(speedSegTrack);
+gaugesEl.appendChild(speedGauge);
+const speedValueEl = speedGauge.querySelector("#rv-speed")!;
+
+// Throttle gauge
+const throttleGauge = document.createElement("div");
+throttleGauge.className = "review-gauge";
+throttleGauge.innerHTML = `<div class="review-gauge-label">開度 THROTTLE</div><div class="review-gauge-header"><span class="review-gauge-value" id="rv-throttle">--</span><span class="review-gauge-unit">%</span></div>`;
+const tpsSegTrack = makeSegTrack(TPS_SEGS);
+throttleGauge.appendChild(tpsSegTrack);
+gaugesEl.appendChild(throttleGauge);
+const throttleValueEl = throttleGauge.querySelector("#rv-throttle")!;
+
+function updateGaugeSegs(track: HTMLElement, fraction: number, colorFn: (idx: number, total: number) => string) {
+  const segs = track.children;
+  const lit = Math.round(fraction * segs.length);
+  for (let i = 0; i < segs.length; i++) {
+    const el = segs[i] as HTMLElement;
+    if (i < lit) {
+      const c = colorFn(i, segs.length);
+      el.style.background = c;
+      el.style.borderColor = c;
+      el.style.boxShadow = `0 0 6px ${c}40`;
+    } else {
+      el.style.background = "";
+      el.style.borderColor = "";
+      el.style.boxShadow = "";
+    }
+  }
+}
+
+// ── Legend ──
+interface LegendStop { color: string; label: string; }
+
+const SPEED_LEGEND: LegendStop[] = [
+  { color: "rgb(255,255,255)", label: "0-40 MPH" },
+  { color: "rgb(241,196,15)", label: "40-50 MPH" },
+  { color: "rgb(255,107,53)", label: "50-80 MPH" },
+  { color: "rgb(231,76,60)", label: "80+ MPH" },
+];
+
+const THROTTLE_LEGEND: LegendStop[] = [
+  { color: "rgb(46,204,113)", label: "0-10%" },
+  { color: "rgb(255,255,255)", label: "10-40%" },
+  { color: "rgb(241,196,15)", label: "40-70%" },
+  { color: "rgb(255,107,53)", label: "70-90%" },
+  { color: "rgb(231,76,60)", label: "90-100%" },
+];
+
+function renderLegend() {
+  const stops = trailMode === "throttle" ? THROTTLE_LEGEND : SPEED_LEGEND;
+  const title = trailMode === "throttle" ? "THROTTLE" : "SPEED";
+  legendEl.innerHTML = `<div class="legend-title">${title}</div>`;
+  for (const s of stops) {
+    const row = document.createElement("div");
+    row.className = "legend-row";
+    row.innerHTML = `<span class="legend-swatch" style="background:${s.color}"></span><span class="legend-label">${s.label}</span>`;
+    legendEl.appendChild(row);
+  }
+}
+renderLegend();
+
+function formatTime(ms: number): string {
+  if (ms <= 0) return "0:00.000";
+  const totalSec = ms / 1000;
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return `${min}:${sec.toFixed(3).padStart(6, "0")}`;
+}
+
+function formatDate(epoch: number): string {
+  const d = new Date(epoch);
+  return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+async function apiFetch(path: string, method = "GET", body?: unknown): Promise<any> {
+  const opts: RequestInit = { method, headers: { "Content-Type": "application/json" } };
+  if (body !== undefined) opts.body = JSON.stringify(body);
+  const res = await fetch(`${SERVER_URL}${path}`, opts);
+  return res.json();
+}
+
+// ── Sessions ──
+async function loadSessions() {
+  sessions = await apiFetch(`/sessions?track=${trackId}`);
+  renderSessionList();
+}
+
+function renderSessionList() {
+  sessionListEl.innerHTML = "";
+  for (const s of sessions) {
+    const row = document.createElement("div");
+    row.className = `review-session${session?.id === s.id ? " selected" : ""}`;
+    row.innerHTML =
+      `<span class="review-session-driver">${s.driver || "UNKNOWN"}</span>` +
+      `<span class="review-session-info">${formatDate(s.createdAt)}${s.running ? " // LIVE" : ""}</span>` +
+      `<span class="review-session-laps">${s.laps.length} laps</span>` +
+      `<button class="review-session-del" data-id="${s.id}" title="Delete">\u00d7</button>`;
+    row.addEventListener("click", (e) => {
+      if ((e.target as HTMLElement).closest(".review-session-del")) return;
+      selectSession(s.id);
+    });
+    sessionListEl.appendChild(row);
+  }
+
+  sessionListEl.querySelectorAll(".review-session-del").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const id = (btn as HTMLElement).dataset.id!;
+      if (!confirm("Delete this session?")) return;
+      await apiFetch(`/sessions/${id}`, "DELETE");
+      if (session?.id === id) { session = null; selectedLapIdx = -1; clearLapView(); updateMeta(); }
+      await loadSessions();
+    });
+  });
+}
+
+async function selectSession(id: string) {
+  session = await apiFetch(`/sessions/${id}`);
+  if (!session) return;
+
+  const sesTrack = TRACKS[session.track];
+  if (sesTrack && session.track !== trackId) {
+    trackDef = sesTrack;
+    map.setView(trackDef.center, trackDef.zoom);
+    (map as any).setBearing(trackDef.bearing);
+    drawTrackOverlays();
+  }
+
+  selectedLapIdx = -1;
+  clearLapView();
+  updateMeta();
+  renderSessionList();
+  renderLapList();
+  if (session.laps.length > 0) selectLap(0);
+}
+
+function updateMeta() {
+  if (!session) { metaEl.textContent = "SELECT A SESSION"; return; }
+  const t = TRACKS[session.track];
+  metaEl.textContent = `${session.driver || "UNKNOWN"} // ${t?.name ?? session.track} // ${formatDate(session.createdAt)} // ${session.laps.length} LAPS`;
+}
+
+function clearLapView() {
+  for (const l of trailLines) l.remove();
+  trailLines = [];
+  if (posMarker) { posMarker.remove(); posMarker = null; }
+  lapListEl.innerHTML = "";
+  lapCoords = []; lapSpeeds = []; lapThrottles = []; lapGx = []; lapGy = []; lapTimestamps = []; lapEntries = [];
+  seekEl.value = "0"; seekTimeEl.textContent = "0:00.000";
+  speedValueEl.textContent = "--";
+  throttleValueEl.textContent = "--";
+  updateGaugeSegs(speedSegTrack, 0, () => "");
+  updateGaugeSegs(tpsSegTrack, 0, () => "");
+  drawGCircle(0, 0);
+}
+
+// ── Laps ──
+function getBestTime(): number | null {
+  if (!session) return null;
+  const clean = session.laps.filter((l) => l.flag === "clean");
+  if (clean.length === 0) return null;
+  return Math.min(...clean.map((l) => l.time));
+}
+
+function renderLapList() {
+  lapListEl.innerHTML = "";
+  if (!session) return;
+  const best = getBestTime();
+
+  for (let i = 0; i < session.laps.length; i++) {
+    const lap = session.laps[i];
+    const row = document.createElement("div");
+    row.className = `review-lap${lap.flag !== "clean" ? " flagged" : ""}${i === selectedLapIdx ? " selected" : ""}`;
+
+    const delta = best !== null && lap.flag === "clean" ? lap.time - best : null;
+    let deltaStr = "", deltaClass = "review-lap-delta";
+    if (delta === 0) { deltaStr = "BEST"; deltaClass = "review-lap-delta best"; }
+    else if (delta !== null && delta > 0) deltaStr = `+${(delta / 1000).toFixed(3)}`;
+
+    const flagText = lap.flag === "yellow" ? "YEL" : lap.flag === "pit" ? "PIT" : "";
+    row.innerHTML =
+      `<span class="review-lap-num">L${lap.lap}</span>` +
+      `<span class="review-lap-time">${formatTime(lap.time)}</span>` +
+      `<span class="${deltaClass}">${deltaStr}</span>` +
+      `<span class="review-lap-flag ${lap.flag}">${flagText}</span>`;
+    row.addEventListener("click", () => selectLap(i));
+    lapListEl.appendChild(row);
+  }
+}
+
+async function selectLap(idx: number) {
+  if (!session || idx < 0 || idx >= session.laps.length) return;
+  selectedLapIdx = idx;
+  renderLapList();
+
+  const lap = session.laps[idx];
+  const channels = "gps_lat,gps_lon,gps_speed,gps_heading,throttle_pos,g_force_x,g_force_y,coolant_temp,manifold_pressure";
+  const data = await apiFetch(`/wal/range?start_seq=${lap.startSeq}&end_seq=${lap.endSeq}&channels=${channels}`);
+  lapEntries = data.entries;
+
+  const byTs = new Map<number, Record<string, number>>();
+  for (const e of lapEntries) {
+    let rec = byTs.get(e.ts);
+    if (!rec) { rec = {}; byTs.set(e.ts, rec); }
+    rec[e.channel] = e.value;
+  }
+
+  lapCoords = []; lapSpeeds = []; lapThrottles = []; lapGx = []; lapGy = []; lapTimestamps = [];
+  const sortedTs = Array.from(byTs.keys()).sort((a, b) => a - b);
+  for (const ts of sortedTs) {
+    const rec = byTs.get(ts)!;
+    if (rec.gps_lat !== undefined && rec.gps_lon !== undefined) {
+      lapCoords.push([rec.gps_lat, rec.gps_lon]);
+      lapSpeeds.push(rec.gps_speed ?? 0);
+      lapThrottles.push(rec.throttle_pos ?? 0);
+      lapGx.push(rec.g_force_x ?? 0);
+      lapGy.push(rec.g_force_y ?? 0);
+      lapTimestamps.push(ts);
+    }
+  }
+
+  drawTrail();
+  seekEl.max = String(Math.max(0, lapCoords.length - 1));
+  seekEl.value = seekEl.max;
+  updateSeek(lapCoords.length - 1);
+}
+
+function drawTrail() {
+  for (const l of trailLines) l.remove();
+  trailLines = [];
+  if (lapCoords.length < 2) return;
+
+  const values = trailMode === "throttle" ? lapThrottles : lapSpeeds;
+  const colorFn = trailMode === "throttle" ? throttleToColor : speedToColor;
+  const bucketSize = Math.max(1, Math.ceil(lapCoords.length / 80));
+
+  for (let b = 0; b < lapCoords.length - 1; b += bucketSize) {
+    const end = Math.min(b + bucketSize + 1, lapCoords.length);
+    const slice = lapCoords.slice(b, end);
+    if (slice.length < 2) continue;
+
+    let sum = 0, cnt = 0;
+    for (let j = b; j < Math.min(b + bucketSize, values.length); j++) { sum += values[j]; cnt++; }
+    const color = colorFn(cnt > 0 ? sum / cnt : 0);
+
+    const line = L.polyline(slice as L.LatLngExpression[], { color, weight: 3, opacity: 0.8 }).addTo(map);
+    trailLines.push(line);
+  }
+}
+
+function updateSeek(idx: number) {
+  if (idx < 0 || idx >= lapCoords.length) return;
+
+  const [lat, lon] = lapCoords[idx];
+  if (!posMarker) {
+    posMarker = L.marker([lat, lon], {
+      icon: L.divIcon({
+        className: "",
+        html: `<div style="width:10px;height:10px;border-radius:50%;background:#fff;border:2px solid #e74c3c;margin:-5px 0 0 -5px;box-shadow:0 0 8px rgba(231,76,60,0.6);"></div>`,
+        iconSize: [0, 0],
+      }),
+      interactive: false,
+    }).addTo(map);
+  } else {
+    posMarker.setLatLng([lat, lon]);
+  }
+
+  if (lapTimestamps.length > 0) {
+    seekTimeEl.textContent = formatTime(lapTimestamps[idx] - lapTimestamps[0]);
+  }
+
+  // G-force dial
+  drawGCircle(lapGx[idx] ?? 0, lapGy[idx] ?? 0);
+
+  // Speed gauge
+  const spdKmh = lapSpeeds[idx] ?? 0;
+  const spdMph = Math.round(spdKmh * KMH_TO_MPH);
+  speedValueEl.textContent = String(spdMph);
+  updateGaugeSegs(speedSegTrack, Math.min(1, spdMph / MAX_MPH), (i, n) => {
+    const segMph = ((i + 1) / n) * MAX_MPH;
+    return speedToColor(segMph / KMH_TO_MPH);
+  });
+
+  // Throttle gauge
+  const tps = lapThrottles[idx] ?? 0;
+  throttleValueEl.textContent = String(Math.round(tps));
+  updateGaugeSegs(tpsSegTrack, Math.min(1, tps / 100), (i, n) => {
+    return throttleToColor(((i + 1) / n) * 100);
+  });
+}
+
+seekEl.addEventListener("input", () => updateSeek(parseInt(seekEl.value, 10)));
+
+// ── Init ──
+async function init() {
+  await loadSessions();
+  const requestedId = params.get("session");
+  if (requestedId && sessions.find((s) => s.id === requestedId)) await selectSession(requestedId);
+  else if (sessions.length > 0) await selectSession(sessions[0].id);
+  else updateMeta();
+}
+init();
+propagateQueryParams();

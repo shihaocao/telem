@@ -1,8 +1,10 @@
 import "./editor.css";
+import { propagateQueryParams } from "./nav";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet-rotate";
-import type { TrackDef } from "./track";
+import { TRACKS, type TrackDef } from "./track";
+import { createDropdown } from "./dropdown";
 
 const TILES = "https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png";
 const TILE_OPTS: L.TileLayerOptions = { maxZoom: 20, subdomains: "abcd" };
@@ -40,7 +42,7 @@ function pushUndo() {
 
 // DOM refs
 const mapContainer = document.getElementById("map-container")!;
-const trackLoadEl = document.getElementById("track-load") as HTMLSelectElement;
+const trackLoadContainer = document.getElementById("track-load")!;
 const nameInput = document.getElementById("input-name") as HTMLInputElement;
 const zoomInput = document.getElementById("input-zoom") as HTMLInputElement;
 const bearingInput = document.getElementById("input-bearing") as HTMLInputElement;
@@ -311,23 +313,13 @@ function buildJson(): string {
   return JSON.stringify(obj, null, 2);
 }
 
-// ── Save (writes to tracks/ via Vite middleware) ──
+// ── Copy to clipboard ──
 document.getElementById("btn-save")!.addEventListener("click", async () => {
-  const id = trackLoadEl.value;
-  if (!id) { alert("Select a track first"); return; }
   const json = buildJson();
-  const res = await fetch(`/api/tracks/${id}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: json,
-  });
+  await navigator.clipboard.writeText(json);
   const btn = document.getElementById("btn-save")!;
-  if (res.ok) {
-    btn.textContent = "SAVED!";
-    setTimeout(() => { btn.textContent = "SAVE"; }, 1500);
-  } else {
-    alert("Save failed");
-  }
+  btn.textContent = "COPIED!";
+  setTimeout(() => { btn.textContent = "COPY"; }, 1500);
 });
 
 // ── Download ──
@@ -373,30 +365,22 @@ document.addEventListener("keydown", (e) => {
 });
 
 // ── Load track list ──
-async function loadTrackList() {
-  const res = await fetch("/api/tracks/");
-  const tracks: Record<string, TrackDef> = await res.json();
-
-  trackLoadEl.innerHTML = '<option value="">-- select --</option>';
-  for (const [id, t] of Object.entries(tracks)) {
-    const opt = document.createElement("option");
-    opt.value = id;
-    opt.textContent = t.name;
-    trackLoadEl.appendChild(opt);
-  }
-
-  trackLoadEl.addEventListener("change", () => {
-    const id = trackLoadEl.value;
-    if (!id || !tracks[id]) return;
-    loadTrack(tracks[id]);
-  });
+function loadTrackList() {
+  const trackDropdown = createDropdown("-- SELECT --");
+  trackDropdown.setOptions(
+    Object.entries(TRACKS).map(([id, t]) => ({ value: id, label: t.name })),
+  );
+  trackDropdown.onChange = (id) => {
+    if (TRACKS[id]) loadTrack(TRACKS[id]);
+  };
+  trackLoadContainer.appendChild(trackDropdown.el);
 
   // auto-load from query param
   const params = new URLSearchParams(window.location.search);
   const trackId = params.get("track");
-  if (trackId && tracks[trackId]) {
-    trackLoadEl.value = trackId;
-    loadTrack(tracks[trackId]);
+  if (trackId && TRACKS[trackId]) {
+    trackDropdown.setValue(trackId);
+    loadTrack(TRACKS[trackId]);
   }
 }
 
@@ -422,3 +406,4 @@ function loadTrack(t: TrackDef) {
 }
 
 loadTrackList();
+propagateQueryParams();

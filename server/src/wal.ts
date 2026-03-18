@@ -228,6 +228,18 @@ export class WalEngine extends EventEmitter {
     return Array.from(this.byChannel.keys());
   }
 
+  /** Return entries with seq in [startSeq, endSeq], optionally filtered by channel. */
+  getEntriesInRange(startSeq: number, endSeq: number, channels?: Set<string>): WalEntry[] {
+    const result: WalEntry[] = [];
+    for (let s = startSeq; s <= endSeq; s++) {
+      const e = this.bySeq.get(s);
+      if (!e) continue;
+      if (channels && !channels.has(e.channel)) continue;
+      result.push(e);
+    }
+    return result;
+  }
+
   getChannelCounts(): Record<string, number> {
     const counts: Record<string, number> = {};
     for (const [ch, arr] of this.byChannel) {

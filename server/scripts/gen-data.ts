@@ -276,13 +276,27 @@ function ectToVoltage(tempC: number): number {
 const ADC_NOISE = 0.05; // ±50mV
 
 async function send(batch: unknown[]): Promise<void> {
-  const res = await fetch(`${BASE_URL}/ingest`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(batch),
-  });
-  if (!res.ok) {
-    throw new Error(`ingest failed: ${res.status} ${await res.text()}`);
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(`${BASE_URL}/ingest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(batch),
+      });
+      if (!res.ok) {
+        throw new Error(`ingest failed: ${res.status} ${await res.text()}`);
+      }
+      return;
+    } catch (err: any) {
+      if (err?.cause?.code === "ECONNREFUSED" && attempt < 30) {
+        if (attempt === 0) process.stderr.write("waiting for server...");
+        else process.stderr.write(".");
+        await sleep(1000);
+        continue;
+      }
+      if (attempt > 0) process.stderr.write("\n");
+      throw err;
+    }
   }
 }
 

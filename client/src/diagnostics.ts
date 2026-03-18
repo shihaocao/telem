@@ -111,7 +111,7 @@ export function createDiagnostics(
 
   const cells: DiagCell[] = [
     createCell(grid, "coolant_temp", "冷却 COOLANT", "\u00B0C", RED, 0, 130, 100),
-    createCell(grid, "manifold_pressure", "圧力 MANIFOLD AIR PRESSURE", "kPa", ORANGE, 0, 110),
+    createCell(grid, "manifold_pressure", "圧力 MANIFOLD ABSOLUTE PRESSURE", "kPa", ORANGE, 0, 110),
   ];
 
   function update(): void {

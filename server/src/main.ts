@@ -1,5 +1,12 @@
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { WalEngine } from "./wal.js";
 import { createServer } from "./http.js";
+import { SessionStore } from "./sessions.js";
+import { LapDetector } from "./lap-detector.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const TRACKS_DIR = resolve(__dirname, "../../tracks");
 
 const DATA_DIR = process.env.DATA_DIR ?? "./data";
 const PORT = parseInt(process.env.PORT ?? "4400", 10);
@@ -18,7 +25,27 @@ async function main(): Promise<void> {
     `WAL initialized: seq=${wal.currentSeq} gen=${wal.currentGeneration} entries=${wal.totalEntries}`,
   );
 
-  const server = createServer(wal);
+  const sessions = new SessionStore(DATA_DIR);
+  const lapDetector = new LapDetector(TRACKS_DIR, sessions, wal);
+  const server = createServer(wal, sessions, lapDetector);
+
+  // Wire GPS data to lap detector
+  let lastLat = 0;
+  let lastLon = 0;
+  let lastGpsTs = 0;
+
+  wal.on("entry", (entry) => {
+    if (entry.channel === "gps_lat") {
+      lastLat = entry.value as number;
+      lastGpsTs = entry.ts;
+    } else if (entry.channel === "gps_lon") {
+      lastLon = entry.value as number;
+      // trigger detection when we have both lat+lon (they come in the same batch)
+      if (lastLat !== 0 && lastLon !== 0 && entry.ts === lastGpsTs) {
+        lapDetector.onGps(lastLat, lastLon, entry.ts);
+      }
+    }
+  });
 
   server.listen(PORT, "0.0.0.0", () => {
     console.log(`telemetry server listening on 0.0.0.0:${PORT}`);

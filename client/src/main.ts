@@ -1,10 +1,14 @@
 import "./style.css";
+import { propagateQueryParams } from "./nav";
 import { TelemetryManager } from "./telemetry";
 import { createPanels, ChartPanel } from "./charts";
 import { createMaps, MapPanels } from "./map";
 import { createGCircle, GCirclePanel } from "./gcircle";
 import { createDiagnostics, DiagPanel } from "./diagnostics";
+import { createLapTimes, LapTimesPanel } from "./laptimes";
 import { ConnectionState } from "./types";
+import { createDropdown } from "./dropdown";
+import { TRACKS } from "./track";
 
 const statusEl = document.getElementById("connection-status")!;
 const latencyEl = document.getElementById("stat-latency")!;
@@ -85,18 +89,24 @@ let panels: ChartPanel[] = [];
 let maps: MapPanels;
 let gcircle: GCirclePanel;
 let diag: DiagPanel;
+let lapTimes: LapTimesPanel;
 
 function init() {
   // track selector
-  const trackSelect = document.getElementById("track-select") as HTMLSelectElement;
+  const trackSelectContainer = document.getElementById("track-select")!;
   const params = new URLSearchParams(window.location.search);
   const currentTrack = params.get("track") ?? "sonoma";
-  trackSelect.value = currentTrack;
-  trackSelect.addEventListener("change", () => {
+  const trackDropdown = createDropdown("SELECT TRACK");
+  trackDropdown.setOptions(
+    Object.entries(TRACKS).map(([id, t]) => ({ value: id, label: t.name })),
+  );
+  trackDropdown.setValue(currentTrack);
+  trackDropdown.onChange = (value) => {
     const url = new URL(window.location.href);
-    url.searchParams.set("track", trackSelect.value);
+    url.searchParams.set("track", value);
     window.location.href = url.toString();
-  });
+  };
+  trackSelectContainer.appendChild(trackDropdown.el);
 
   panels = createPanels(mgr);
   maps = createMaps(
@@ -106,6 +116,7 @@ function init() {
   );
   gcircle = createGCircle(document.getElementById("gcircle")!, mgr);
   diag = createDiagnostics(document.getElementById("diagnostics")!, mgr);
+  lapTimes = createLapTimes(document.getElementById("laptimes")!, mgr);
   mgr.connect();
   requestAnimationFrame(loop);
 }
@@ -120,6 +131,7 @@ function loop() {
     maps.update();
     gcircle.update();
     diag.update();
+    lapTimes.update();
 
     // update stats
     const seq = mgr.lastSeqNum;
@@ -145,3 +157,4 @@ function loop() {
 }
 
 init();
+propagateQueryParams();

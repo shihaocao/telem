@@ -1,0 +1,217 @@
+:root {
+  --bg: #0a0a0a;
+  --panel-bg: #0d0d12;
+  --border: rgba(255, 107, 53, 0.12);
+  --border-bright: rgba(255, 107, 53, 0.3);
+  --accent: #ff6b35;
+  --accent-dim: rgba(255, 107, 53, 0.5);
+  --red: #e74c3c;
+  --green: #2ecc71;
+  --amber: #d4a017;
+  --text: #c8bfa0;
+  --text-bright: #f0e6d0;
+  --text-dim: rgba(200, 191, 160, 0.35);
+  --font: "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  padding: 16px;
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px);
+}
+
+h1 {
+  font-size: 13px;
+  letter-spacing: 3px;
+  color: var(--accent);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  text-shadow: 0 0 8px rgba(255, 107, 53, 0.15);
+}
+
+h1 .jp { font-size: 9px; color: var(--text-dim); letter-spacing: 2px; }
+
+#status {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--red);
+}
+
+#status.live { color: var(--green); }
+
+#nuke-btn {
+  background: transparent;
+  border: 1px solid var(--red);
+  color: var(--red);
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  padding: 3px 10px;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
+#nuke-btn:hover { background: var(--red); color: #fff; }
+
+.nav-link {
+  color: rgba(255, 107, 53, 0.3);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-decoration: none;
+  border: 1px solid rgba(255, 107, 53, 0.15);
+  padding: 3px 10px;
+}
+
+.nav-link:hover { color: var(--accent); border-color: var(--accent-dim); }
+
+#cam-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  padding: 8px 14px;
+  width: fit-content;
+}
+
+.cam-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--accent-dim);
+}
+
+#cam-controls button {
+  background: transparent;
+  border: 1px solid var(--border-bright);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+}
+
+#cam-controls button:hover { background: rgba(255, 107, 53, 0.1); }
+
+#exp-val {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-bright);
+  min-width: 120px;
+  text-align: center;
+}
+
+#debug-controls {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+#latency-panel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  padding: 8px 14px;
+}
+
+#last-update {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-bright);
+  min-width: 60px;
+}
+
+#latency-val {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--green);
+  min-width: 50px;
+}
+
+#latency-canvas { height: 30px; width: 200px; }
+
+#channels {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 4px;
+}
+
+.ch {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
+}
+
+.ch::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0;
+  width: 10px; height: 10px;
+  border-top: 1px solid var(--accent-dim);
+  border-left: 1px solid var(--accent-dim);
+  pointer-events: none;
+}
+
+.ch::after {
+  content: "";
+  position: absolute;
+  bottom: 0; right: 0;
+  width: 10px; height: 10px;
+  border-bottom: 1px solid var(--accent-dim);
+  border-right: 1px solid var(--accent-dim);
+  pointer-events: none;
+}
+
+.ch-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.ch-name {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--accent-dim);
+  letter-spacing: 2px;
+}
+
+.ch-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-bright);
+}
+
+.ch-canvas {
+  width: 100%;
+  height: 40px;
+}

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SESSION REVIEW</title>
+</head>
+<body>
+  <header id="status-bar">
+    <div class="header-left">
+      <span class="title">SESSION REVIEW</span>
+      <span class="title-jp">セッション検討</span>
+      <span class="title-sub" id="review-meta"></span>
+    </div>
+    <div class="status-group">
+      <a href="/" class="nav-link">DASHBOARD</a>
+      <a href="/debug.html" class="nav-link">DEBUG</a>
+      <a href="/editor.html" class="nav-link">EDITOR</a>
+    </div>
+  </header>
+  <div id="review-body">
+    <div id="review-sessions">
+      <div class="sidebar-label">SESSIONS</div>
+      <div id="review-session-list"></div>
+    </div>
+    <div id="review-sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">LAPS</div>
+        <div id="review-lap-list"></div>
+      </div>
+    </div>
+    <div id="review-content">
+      <div id="review-map">
+        <button id="review-sat-toggle" class="trail-mode-btn" title="Toggle satellite">SAT</button>
+      </div>
+      <div id="review-telem">
+        <div id="review-telem-main">
+          <div id="review-gcircle"></div>
+          <div id="review-gauges"></div>
+          <div id="review-legend"></div>
+        </div>
+        <div id="review-seek-row">
+          <div id="review-trail-modes">
+            <button class="trail-mode-btn active" data-mode="speed">SPEED</button>
+            <button class="trail-mode-btn" data-mode="throttle">THROTTLE</button>
+          </div>
+          <span id="review-seek-time">0:00.000</span>
+          <input type="range" id="review-seek" min="0" max="100" value="0" step="1" />
+        </div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/src/review.ts"></script>
+</body>
+</html>

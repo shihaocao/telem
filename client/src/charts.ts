@@ -1,4 +1,5 @@
 import { TelemetryManager } from "./telemetry";
+import { throttleToColor } from "./track-utils";
 
 export interface ChartPanel {
   update: () => void;
@@ -50,17 +51,15 @@ function createSegments(count: number, className: string): HTMLElement {
   return track;
 }
 
-function updateSegments(track: HTMLElement, fraction: number, colorByIndex?: boolean): void {
+function updateSegments(track: HTMLElement, fraction: number, colorFn?: (i: number, n: number) => string): void {
   const segs = track.children;
   const lit = Math.round(fraction * segs.length);
-  const maxMph = MAX_MPH;
   for (let i = 0; i < segs.length; i++) {
     const el = segs[i] as HTMLElement;
     const on = i < lit;
     el.classList.toggle("seg-on", on);
-    if (on && colorByIndex) {
-      const segMph = ((i + 1) / segs.length) * maxMph;
-      const c = speedColor(segMph);
+    if (on && colorFn) {
+      const c = colorFn(i, segs.length);
       el.style.background = c;
       el.style.borderColor = c;
       el.style.boxShadow = `0 0 8px ${c}40, inset 0 0 4px ${c}4d`;
@@ -71,6 +70,9 @@ function updateSegments(track: HTMLElement, fraction: number, colorByIndex?: boo
     }
   }
 }
+
+const speedColorFn = (i: number, n: number) => speedColor(((i + 1) / n) * MAX_MPH);
+const throttleColorFn = (i: number, n: number) => throttleToColor(((i + 1) / n) * 100);
 
 export function createPanels(mgr: TelemetryManager): ChartPanel[] {
   const container = document.getElementById("chart-speed")!;
@@ -112,14 +114,14 @@ export function createPanels(mgr: TelemetryManager): ChartPanel[] {
     if (speedSmoothed != null) {
       const mph = speedSmoothed * KMH_TO_MPH;
       mphVal.textContent = String(Math.round(mph));
-      updateSegments(mphTrack, Math.min(1, mph / MAX_MPH), true);
+      updateSegments(mphTrack, Math.min(1, mph / MAX_MPH), speedColorFn);
     }
 
     const tpsSmoothed = mgr.getSmoothed("throttle_pos");
     if (tpsSmoothed != null) {
       const tps = Math.max(0, Math.min(100, tpsSmoothed));
       tpsVal.textContent = String(Math.round(tps));
-      updateSegments(tpsTrack, tps / 100);
+      updateSegments(tpsTrack, tps / 100, throttleColorFn);
     }
   };
 

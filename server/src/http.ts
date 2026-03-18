@@ -1,10 +1,12 @@
 import * as http from "node:http";
 import { execSync } from "node:child_process";
 import { WalEngine, WalEntry } from "./wal.js";
+import { SessionStore } from "./sessions.js";
+import { LapDetector, type LapEvent } from "./lap-detector.js";
 
 function cors(res: http.ServerResponse): void {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
@@ -23,7 +25,7 @@ function readBody(req: http.IncomingMessage): Promise<string> {
   });
 }
 
-export function createServer(wal: WalEngine): http.Server {
+export function createServer(wal: WalEngine, sessions: SessionStore, lapDetector?: LapDetector): http.Server {
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     const pathname = url.pathname;
@@ -37,12 +39,28 @@ export function createServer(wal: WalEngine): http.Server {
     }
 
     try {
+      // Session SSE stream: /sessions/:id/stream
+      const streamMatch = pathname.match(/^\/sessions\/([a-zA-Z0-9_-]+)\/stream$/);
+      if (streamMatch && req.method === "GET" && lapDetector) {
+        handleSessionStream(req, res, sessions, lapDetector, streamMatch[1]);
+        return;
+      }
+
+      // Session routes: /sessions and /sessions/:id
+      const sessionMatch = pathname.match(/^\/sessions(?:\/([a-zA-Z0-9_-]+))?$/);
+      if (sessionMatch) {
+        await handleSessions(req, res, url, wal, sessions, sessionMatch[1] ?? null);
+        return;
+      }
+
       if (req.method === "POST" && pathname === "/ingest") {
         await handleIngest(req, res, wal);
       } else if (req.method === "GET" && pathname === "/stream") {
         handleStream(url, req, res, wal);
       } else if (req.method === "GET" && pathname === "/query") {
         handleQuery(url, res, wal);
+      } else if (req.method === "GET" && pathname === "/wal/range") {
+        handleWalRange(url, res, wal);
       } else if (req.method === "GET" && pathname === "/channels") {
         json(res, 200, { channels: wal.getChannels() });
       } else if (req.method === "GET" && pathname === "/stats") {
@@ -185,6 +203,115 @@ function handleQuery(url: URL, res: http.ServerResponse, wal: WalEngine): void {
 
   const entries = wal.queryByChannel(channel, { startTs, endTs, afterSeq, limit });
   json(res, 200, { entries, count: entries.length });
+}
+
+function handleWalRange(url: URL, res: http.ServerResponse, wal: WalEngine): void {
+  const startSeq = parseInt(url.searchParams.get("start_seq") ?? "", 10);
+  const endSeq = parseInt(url.searchParams.get("end_seq") ?? "", 10);
+  if (isNaN(startSeq) || isNaN(endSeq)) {
+    json(res, 400, { error: "start_seq and end_seq are required" });
+    return;
+  }
+  const channelsParam = url.searchParams.get("channels");
+  const channels = channelsParam ? new Set(channelsParam.split(",")) : undefined;
+  const entries = wal.getEntriesInRange(startSeq, endSeq, channels);
+  json(res, 200, { entries, count: entries.length });
+}
+
+// --- Session SSE stream ---
+
+function handleSessionStream(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  store: SessionStore,
+  detector: LapDetector,
+  sessionId: string,
+): void {
+  const session = store.get(sessionId);
+  if (!session) {
+    json(res, 404, { error: "session not found" });
+    return;
+  }
+
+  cors(res);
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  });
+
+  function sendEvent(name: string, data: unknown): void {
+    res.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
+  }
+
+  // send current state immediately
+  sendEvent("session", store.get(sessionId));
+
+  // forward lap events for this session
+  const onLap = (e: LapEvent): void => {
+    if (e.sessionId === sessionId) {
+      sendEvent("lap", e.lap);
+      sendEvent("session", e.session);
+    }
+  };
+  detector.on("lap", onLap);
+
+  const keepalive = setInterval(() => {
+    res.write(": keepalive\n\n");
+  }, 15_000);
+
+  const cleanup = (): void => {
+    detector.off("lap", onLap);
+    clearInterval(keepalive);
+  };
+  req?.socket?.on("close", cleanup);
+  res.on("close", cleanup);
+}
+
+// --- Session CRUD ---
+
+async function handleSessions(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  url: URL,
+  wal: WalEngine,
+  store: SessionStore,
+  id: string | null,
+): Promise<void> {
+  if (!id) {
+    // /sessions
+    if (req.method === "GET") {
+      const track = url.searchParams.get("track") ?? undefined;
+      json(res, 200, store.list(track));
+    } else if (req.method === "POST") {
+      const raw = await readBody(req);
+      let body: any;
+      try { body = JSON.parse(raw); } catch { json(res, 400, { error: "invalid json" }); return; }
+      if (!body.track) { json(res, 400, { error: "track is required" }); return; }
+      json(res, 201, store.create(body.track, wal.currentSeq, body.driver));
+    } else {
+      json(res, 405, { error: "method not allowed" });
+    }
+  } else {
+    // /sessions/:id
+    if (req.method === "GET") {
+      const session = store.get(id);
+      if (!session) { json(res, 404, { error: "session not found" }); return; }
+      json(res, 200, session);
+    } else if (req.method === "PATCH") {
+      const raw = await readBody(req);
+      let body: any;
+      try { body = JSON.parse(raw); } catch { json(res, 400, { error: "invalid json" }); return; }
+      const session = store.update(id, body);
+      if (!session) { json(res, 404, { error: "session not found" }); return; }
+      json(res, 200, session);
+    } else if (req.method === "DELETE") {
+      if (!store.delete(id)) { json(res, 404, { error: "session not found" }); return; }
+      json(res, 200, { ok: true });
+    } else {
+      json(res, 405, { error: "method not allowed" });
+    }
+  }
 }
 
 // --- Camera controls (v4l2-ctl) ---
