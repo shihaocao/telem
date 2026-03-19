@@ -148,7 +148,7 @@ async function main() {
       { channel: "manifold_pressure", value: Math.round(mapToKpa(mapV) * 10) / 10 },
       { channel: "brake", value: brakeV > BRAKE_THRESHOLD_V ? 1 : 0 },
       { channel: "battery_voltage", value: Math.round(vbatt * 10) / 10 },
-      { channel: "rpm", value: Math.round(rpmVal / 1.25) },
+      { channel: "rpm", value: Math.round(rpmVal) },
       { channel: "speed", value: Math.round(speedKph * 10) / 10 },
       // Raw voltages
       { channel: "ect_voltage", value: Math.round(ectV * 1000) / 1000 },

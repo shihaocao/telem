@@ -32,11 +32,11 @@ constexpr float VDIV_RATIO = 4.3f;
 constexpr int PIN_TACH = 18;
 constexpr int PIN_VSS  = 19;
 
-// Tach: measured 60 edges @ 800rpm, 180 edges @ 2400rpm → 4.5 pulses/rev
-constexpr float TACH_PULSES_PER_REV = 4.5f;
+// Tach: F22A 4-cylinder, calibrated against known RPM points
+constexpr float TACH_PULSES_PER_REV = 4.0f;
 
-// Ring buffer size for period averaging
-constexpr int RING_N = 30;
+// Ring buffer size — smaller = more responsive, larger = smoother
+constexpr int RING_N = 10;
 
 // Timeout: if no pulse for this long, signal is considered dead (e.g. engine off)
 constexpr unsigned long SIGNAL_TIMEOUT_US = 500000; // 500ms
@@ -62,25 +62,37 @@ struct PulseRing {
         last_pulse_us = now;
     }
 
-    // Returns average frequency in Hz, called from main loop with interrupts disabled
+    // Returns average frequency in Hz, called from main loop with interrupts disabled.
+    //
+    // Uses the larger of two spans:
+    //   1) oldest→newest pulse (classic: (count-1) periods)
+    //   2) oldest→now (count periods, accounts for gap since last pulse)
+    // This prevents overestimating frequency when RPM is dropping,
+    // since the gap between last pulse and now acts as a "slow" period.
     float avgFrequency(unsigned long now_us) const {
-        // Signal dead?
         if (count < 2) return 0.0f;
         if ((now_us - last_pulse_us) > SIGNAL_TIMEOUT_US) return 0.0f;
 
-        // Find oldest and newest timestamps in the buffer
-        // newest is at (head - 1), oldest is at (head - count)
         int newest_idx = (head - 1 + RING_N) % RING_N;
         int oldest_idx = (head - count + RING_N) % RING_N;
 
-        unsigned long newest = timestamps[newest_idx];
         unsigned long oldest = timestamps[oldest_idx];
-        unsigned long span = newest - oldest; // micros wraps correctly via unsigned subtraction
+        unsigned long newest = timestamps[newest_idx];
 
-        if (span == 0) return 0.0f;
+        // Span using only buffered pulses
+        unsigned long span_pulses = newest - oldest;
+        // Span extended to now (includes gap since last pulse)
+        unsigned long span_to_now = now_us - oldest;
 
-        // (count - 1) periods span this time range
-        return (float)(count - 1) * 1000000.0f / (float)span;
+        if (span_pulses == 0) return 0.0f;
+
+        // Classic frequency from buffered pulses
+        float freq_pulses = (float)(count - 1) * 1000000.0f / (float)span_pulses;
+        // Frequency treating now as next expected pulse edge
+        float freq_to_now = (float)(count) * 1000000.0f / (float)span_to_now;
+
+        // Use the lower of the two — prevents overestimating during decel
+        return (freq_pulses < freq_to_now) ? freq_pulses : freq_to_now;
     }
 };
 
