@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 export interface Lap {
   lap: number;
   time: number; // ms
-  flag: "clean" | "yellow" | "pit";
+  flag: "clean" | "yellow" | "pit" | "out" | "in";
   track: string;
   startSeq: number; // WAL seq at lap start
   endSeq: number; // WAL seq at lap end (S/F crossing)

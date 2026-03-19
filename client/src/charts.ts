@@ -7,16 +7,18 @@ export interface ChartPanel {
 
 const KMH_TO_MPH = 0.621371;
 const MAX_MPH = 120;
+const MAX_RPM = 7000;
 const MPH_SEGMENTS = 32;
 const TPS_SEGMENTS = 20;
+const RPM_SEGMENTS = 28;
 
 // Speed color ramp (mph): white → yellow → orange → red
 const SPEED_COLORS: [number, [number, number, number]][] = [
-  [0,   [255, 255, 255]],  // white
-  [40,  [255, 255, 255]],  // white
-  [50,  [241, 196, 15]],   // yellow
-  [80,  [255, 107, 53]],   // orange
-  [120, [231, 76, 60]],    // red
+  [0,   [255, 255, 255]],
+  [40,  [255, 255, 255]],
+  [50,  [241, 196, 15]],
+  [80,  [255, 107, 53]],
+  [120, [231, 76, 60]],
 ];
 
 function speedColor(mph: number): string {
@@ -37,6 +39,23 @@ function speedColor(mph: number): string {
     }
   }
   const [r, g, b] = SPEED_COLORS[SPEED_COLORS.length - 1][1];
+  return `rgb(${r},${g},${b})`;
+}
+
+// RPM color: white low → orange mid → red high
+function rpmColor(fraction: number): string {
+  if (fraction < 0.6) return "rgb(255, 255, 255)";
+  if (fraction < 0.8) {
+    const t = (fraction - 0.6) / 0.2;
+    const r = 255;
+    const g = Math.round(255 - (255 - 107) * t);
+    const b = Math.round(255 - (255 - 53) * t);
+    return `rgb(${r},${g},${b})`;
+  }
+  const t = (fraction - 0.8) / 0.2;
+  const r = Math.round(255 - (255 - 231) * t);
+  const g = Math.round(107 - (107 - 76) * t);
+  const b = Math.round(53 + (60 - 53) * t);
   return `rgb(${r},${g},${b})`;
 }
 
@@ -73,6 +92,7 @@ function updateSegments(track: HTMLElement, fraction: number, colorFn?: (i: numb
 
 const speedColorFn = (i: number, n: number) => speedColor(((i + 1) / n) * MAX_MPH);
 const throttleColorFn = (i: number, n: number) => throttleToColor(((i + 1) / n) * 100);
+const rpmColorFn = (i: number, n: number) => rpmColor((i + 1) / n);
 
 export function createPanels(mgr: TelemetryManager): ChartPanel[] {
   const container = document.getElementById("chart-speed")!;
@@ -89,12 +109,25 @@ export function createPanels(mgr: TelemetryManager): ChartPanel[] {
     </div>
     <div class="gauge-divider"></div>
     <div class="gauge">
+      <div class="gauge-label">回転 <span class="gauge-label-jp">RPM</span></div>
+      <div class="gauge-header">
+        <span class="gauge-value" id="gauge-rpm">--</span>
+        <span class="gauge-unit">RPM</span>
+        <span class="gauge-gear-label">GEAR</span>
+        <span class="gauge-gear-badge" id="gauge-gear">--</span>
+      </div>
+    </div>
+    <div class="gauge-divider"></div>
+    <div class="gauge">
       <div class="gauge-label">出力 <span class="gauge-label-jp">THROTTLE</span></div>
       <div class="gauge-header">
         <span class="gauge-value" id="gauge-tps">--</span>
         <span class="gauge-unit">% TPS</span>
       </div>
     </div>
+    <div class="gauge-divider"></div>
+    <div class="gauge-label">制動 <span class="gauge-label-jp">BRAKE</span></div>
+    <div class="gauge-brake" id="gauge-brake">${Array(12).fill('<div class="gauge-brake-seg"></div>').join("")}</div>
   `;
   container.appendChild(inner);
 
@@ -103,11 +136,17 @@ export function createPanels(mgr: TelemetryManager): ChartPanel[] {
   const mphTrack = createSegments(MPH_SEGMENTS, "seg-speed");
   gauges[0].appendChild(mphTrack);
 
+  const rpmTrack = createSegments(RPM_SEGMENTS, "seg-rpm");
+  gauges[1].appendChild(rpmTrack);
+
   const tpsTrack = createSegments(TPS_SEGMENTS, "seg-throttle");
-  gauges[1].appendChild(tpsTrack);
+  gauges[2].appendChild(tpsTrack);
 
   const mphVal = container.querySelector("#gauge-mph") as HTMLElement;
+  const rpmVal = container.querySelector("#gauge-rpm") as HTMLElement;
   const tpsVal = container.querySelector("#gauge-tps") as HTMLElement;
+  const gearVal = container.querySelector("#gauge-gear") as HTMLElement;
+  const brakeEl = container.querySelector("#gauge-brake") as HTMLElement;
 
   const update = () => {
     const speedSmoothed = mgr.getSmoothed("gps_speed") ?? mgr.getSmoothed("speed");
@@ -115,6 +154,23 @@ export function createPanels(mgr: TelemetryManager): ChartPanel[] {
       const mph = speedSmoothed * KMH_TO_MPH;
       mphVal.textContent = String(Math.round(mph));
       updateSegments(mphTrack, Math.min(1, mph / MAX_MPH), speedColorFn);
+    }
+
+    const rpmSmoothed = mgr.getSmoothed("rpm");
+    if (rpmSmoothed != null) {
+      rpmVal.textContent = String(Math.round(rpmSmoothed));
+      updateSegments(rpmTrack, Math.min(1, rpmSmoothed / MAX_RPM), rpmColorFn);
+    }
+
+    const gearBuf = mgr.getBuffer("gear");
+    if (gearBuf && gearBuf.values.length > 0) {
+      const g = gearBuf.values[gearBuf.values.length - 1];
+      gearVal.textContent = g > 0 ? String(g) : "N";
+    }
+
+    const brakeBuf = mgr.getBuffer("brake");
+    if (brakeBuf && brakeBuf.values.length > 0) {
+      brakeEl.classList.toggle("active", brakeBuf.values[brakeBuf.values.length - 1] > 0.5);
     }
 
     const tpsSmoothed = mgr.getSmoothed("throttle_pos");

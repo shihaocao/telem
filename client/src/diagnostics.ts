@@ -8,6 +8,8 @@ const SPARK_POINTS = 100;
 
 const RED = "rgb(231, 76, 60)";
 const ORANGE = "rgb(255, 107, 53)";
+const GREEN = "rgb(46, 204, 113)";
+const WHITE = "rgb(255, 255, 255)";
 
 interface DiagCell {
   channel: string;
@@ -111,7 +113,8 @@ export function createDiagnostics(
 
   const cells: DiagCell[] = [
     createCell(grid, "coolant_temp", "冷却 COOLANT", "\u00B0C", RED, 0, 130, 100),
-    createCell(grid, "manifold_pressure", "圧力 MANIFOLD ABSOLUTE PRESSURE", "kPa", ORANGE, 0, 110),
+    createCell(grid, "manifold_pressure", "圧力 MAP", "kPa", ORANGE, 0, 110),
+    createCell(grid, "battery_voltage", "電圧 BATTERY", "V", GREEN, 11, 15),
   ];
 
   function update(): void {
@@ -120,7 +123,9 @@ export function createDiagnostics(
       if (!buf || buf.values.length === 0) continue;
 
       const smoothed = mgr.getSmoothed(cell.channel) ?? buf.values[buf.values.length - 1];
-      cell.valueEl.textContent = String(Math.round(smoothed));
+      cell.valueEl.textContent = cell.channel === "battery_voltage"
+        ? smoothed.toFixed(1)
+        : String(Math.round(smoothed));
       drawSparkline(cell, buf.values);
 
       // warning state

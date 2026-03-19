@@ -10,6 +10,7 @@
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { optimalGear, rpmFromSpeedAndGear } from "../src/gear.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TRACKS_DIR = resolve(__dirname, "../../tracks");
@@ -183,6 +184,8 @@ let gForceY = 0;
 let coolantTemp = 85;
 let mapKpa = 40;
 let trackDist = 0;
+let currentGear = 2;
+let rpm = 3000;
 
 function step(dt: number): void {
   const { targetSpeed, curv } = getTargetAtDist(trackDist);
@@ -232,6 +235,10 @@ function step(dt: number): void {
   gForceX = clamp(gForceX, -1.5, 1.5);
   gForceY = clamp(gForceY, -1.5, 1.5);
   mapKpa = clamp(mapKpa, 20, 101);
+
+  // Gear + RPM
+  currentGear = optimalGear(speed, 2800, 6800);
+  rpm = rpmFromSpeedAndGear(speed, currentGear);
 
   trackDist += (speed / 3.6) * dt;
 }
@@ -318,6 +325,10 @@ async function main(): Promise<void> {
       { channel: "throttle_pos", value: Math.round(jitter(throttlePos, 2) * 10) / 10, ts },
       { channel: "coolant_temp", value: Math.round(jitter(coolantTemp, 1.5) * 10) / 10, ts },
       { channel: "manifold_pressure", value: Math.round(jitter(mapKpa, 2) * 10) / 10, ts },
+      { channel: "rpm", value: Math.round(jitter(rpm, rpm * 0.02)), ts },
+      { channel: "gear", value: currentGear, ts },
+      { channel: "brake", value: gForceX > 0.15 ? 1 : 0, ts },
+      { channel: "battery_voltage", value: Math.round(jitter(13.8, 0.3) * 10) / 10, ts },
       { channel: "tps_voltage", value: Math.round(jitter(tpsToVoltage(throttlePos), ADC_NOISE) * 1000) / 1000, ts },
       { channel: "ect_voltage", value: Math.round(jitter(ectToVoltage(coolantTemp), ADC_NOISE) * 1000) / 1000, ts },
       { channel: "map_voltage", value: Math.round(jitter(mapToVoltage(mapKpa), ADC_NOISE) * 1000) / 1000, ts },

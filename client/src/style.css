@@ -471,6 +471,44 @@ body::after {
   letter-spacing: 2px;
 }
 
+.gauge-gear-label {
+  margin-left: auto;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--text-dim);
+  align-self: center;
+}
+
+.gauge-gear-badge {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1;
+  text-shadow: 0 0 10px rgba(255, 107, 53, 0.4);
+}
+
+.gauge-brake {
+  display: flex;
+  gap: 3px;
+  height: 20px;
+  transform: skewX(-12deg);
+  padding: 0 6px;
+}
+
+.gauge-brake-seg {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 0.05s, box-shadow 0.05s;
+}
+
+.gauge-brake.active .gauge-brake-seg {
+  background: var(--red);
+  border-color: var(--red);
+  box-shadow: 0 0 8px rgba(231, 76, 60, 0.4), inset 0 0 4px rgba(231, 76, 60, 0.3);
+}
+
 .seg-track {
   display: flex;
   gap: 3px;
@@ -515,7 +553,7 @@ body::after {
 .diag-grid {
   display: grid;
   grid-template-columns: 1fr;
-  grid-template-rows: 1fr 1fr;
+  grid-template-rows: 1fr 1fr 1fr;
   height: 100%;
   gap: 1px;
   background: var(--border);
@@ -839,4 +877,11 @@ body::after {
   background: rgba(231, 76, 60, 0.2);
   border-color: rgba(231, 76, 60, 0.4);
   color: var(--red);
+}
+
+.laptimes-row-flag.out,
+.laptimes-row-flag.in {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: var(--text);
 }

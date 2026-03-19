@@ -332,6 +332,17 @@ async function handleSessions(
       const raw = await readBody(req);
       let body: any;
       try { body = JSON.parse(raw); } catch { json(res, 400, { error: "invalid json" }); return; }
+
+      // When stopping a session, mark last lap as "in" lap
+      if (body.running === false) {
+        const current = store.get(id);
+        if (current?.running && current.laps.length > 0) {
+          const last = current.laps[current.laps.length - 1];
+          if (last.flag === "clean") last.flag = "in";
+          body.laps = current.laps;
+        }
+      }
+
       const session = store.update(id, body);
       if (!session) { json(res, 404, { error: "session not found" }); return; }
       json(res, 200, session);

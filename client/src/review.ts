@@ -16,7 +16,7 @@ const TILES_SAT = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Im
 const TILE_OPTS: L.TileLayerOptions = { maxZoom: 20, subdomains: "abcd" };
 const TILE_OPTS_SAT: L.TileLayerOptions = { maxZoom: 20 };
 
-interface Lap { lap: number; time: number; flag: "clean" | "yellow" | "pit"; track: string; startSeq: number; endSeq: number; }
+interface Lap { lap: number; time: number; flag: "clean" | "yellow" | "pit" | "out" | "in"; track: string; startSeq: number; endSeq: number; }
 interface Session { id: string; track: string; driver: string; createdAt: number; running: boolean; laps: Lap[]; }
 interface WalEntry { seq: number; ts: number; channel: string; value: number; }
 
@@ -380,7 +380,7 @@ function renderLapList() {
     if (delta === 0) { deltaStr = "BEST"; deltaClass = "review-lap-delta best"; }
     else if (delta !== null && delta > 0) deltaStr = `+${(delta / 1000).toFixed(3)}`;
 
-    const flagText = lap.flag === "yellow" ? "YEL" : lap.flag === "pit" ? "PIT" : "";
+    const flagText = lap.flag === "yellow" ? "YEL" : lap.flag === "pit" ? "PIT" : lap.flag === "out" ? "OUT" : lap.flag === "in" ? "IN" : "";
     row.innerHTML =
       `<span class="review-lap-num">L${lap.lap}</span>` +
       `<span class="review-lap-time">${formatTime(lap.time)}</span>` +

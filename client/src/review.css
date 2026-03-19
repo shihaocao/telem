@@ -188,6 +188,7 @@ body::after {
 .review-lap-flag { font-size: 7px; font-weight: 700; letter-spacing: 1px; text-align: right; }
 .review-lap-flag.yellow { color: var(--yellow); }
 .review-lap-flag.pit { color: var(--red); }
+.review-lap-flag.out, .review-lap-flag.in { color: var(--text); }
 
 /* ── Content ── */
 #review-content {

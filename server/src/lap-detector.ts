@@ -114,10 +114,11 @@ export class LapDetector extends EventEmitter {
           continue;
         }
 
+        const lapNum = sess.laps.length + 1;
         const lap: Lap = {
-          lap: sess.laps.length + 1,
+          lap: lapNum,
           time: elapsed,
-          flag: "clean",
+          flag: lapNum === 1 ? "out" : "clean",
           track: sess.track,
           startSeq: sess.lapStartSeq,
           endSeq,

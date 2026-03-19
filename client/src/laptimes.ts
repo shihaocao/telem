@@ -5,7 +5,7 @@ import { trackProgress } from "./track-utils";
 interface Lap {
   lap: number;
   time: number;
-  flag: "clean" | "yellow" | "pit";
+  flag: "clean" | "yellow" | "pit" | "out" | "in";
   track: string;
   startSeq: number;
   endSeq: number;
@@ -256,7 +256,7 @@ export function createLapTimes(
       if (delta === 0) { deltaStr = "BEST"; deltaClass = "laptimes-row-delta best"; }
       else if (delta !== null && delta > 0) deltaStr = `+${(delta / 1000).toFixed(3)}`;
 
-      const flagText = lap.flag === "yellow" ? "YEL" : lap.flag === "pit" ? "PIT" : "\u00b7";
+      const flagText = lap.flag === "yellow" ? "YEL" : lap.flag === "pit" ? "PIT" : lap.flag === "out" ? "OUT" : lap.flag === "in" ? "IN" : "\u00b7";
 
       row.innerHTML =
         `<span class="laptimes-row-num">L${lap.lap}</span>` +
@@ -271,7 +271,8 @@ export function createLapTimes(
         if (!session) return;
         const idx = parseInt((btn as HTMLElement).dataset.idx!);
         const cur = session.laps[idx].flag;
-        session.laps[idx].flag = cur === "clean" ? "yellow" : cur === "yellow" ? "pit" : "clean";
+        const flags: Lap["flag"][] = ["clean", "yellow", "pit", "out", "in"];
+        session.laps[idx].flag = flags[(flags.indexOf(cur) + 1) % flags.length];
         renderList();
         await saveSession();
         loadBestCurve();
