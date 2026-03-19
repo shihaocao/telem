@@ -36,7 +36,7 @@ constexpr int PIN_VSS  = 19;
 constexpr float TACH_PULSES_PER_REV = 4.0f;
 
 // Ring buffer size — smaller = more responsive, larger = smoother
-constexpr int RING_N = 10;
+constexpr int RING_N = 16;
 
 // Timeout: if no pulse for this long, signal is considered dead (e.g. engine off)
 constexpr unsigned long SIGNAL_TIMEOUT_US = 500000; // 500ms

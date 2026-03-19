@@ -124,6 +124,11 @@ async function main() {
   const stream = createReadStream(SERIAL_PORT, { encoding: "utf-8" });
   const rl = createInterface({ input: stream });
 
+  // EMA smoothing for noisy signals
+  const RPM_EMA_ALPHA = 0.3; // 0-1, lower = smoother
+  let rpmSmoothed = 0;
+  let rpmInit = false;
+
   rl.on("line", async (line) => {
     const parts = line.trim().split(/\s+/);
     if (parts.length !== 7) return;
@@ -134,10 +139,13 @@ async function main() {
     const mapV = parseFloat(mapStr);
     const brakeV = parseFloat(brakeStr);
     const vbatt = parseFloat(vbattStr);
-    const rpmVal = parseFloat(rpmStr);
+    const rpmRaw = parseFloat(rpmStr);
     const vssHz = parseFloat(vssStr);
 
-    if ([ectV, tpsV, mapV, brakeV, vbatt, rpmVal, vssHz].some(isNaN)) return;
+    if (!rpmInit) { rpmSmoothed = rpmRaw; rpmInit = true; }
+    else rpmSmoothed = RPM_EMA_ALPHA * rpmRaw + (1 - RPM_EMA_ALPHA) * rpmSmoothed;
+
+    if ([ectV, tpsV, mapV, brakeV, vbatt, rpmRaw, vssHz].some(isNaN)) return;
 
     const speedKph = vssToKph(vssHz);
 
@@ -148,7 +156,7 @@ async function main() {
       { channel: "manifold_pressure", value: Math.round(mapToKpa(mapV) * 10) / 10 },
       { channel: "brake", value: brakeV > BRAKE_THRESHOLD_V ? 1 : 0 },
       { channel: "battery_voltage", value: Math.round(vbatt * 10) / 10 },
-      { channel: "rpm", value: Math.round(rpmVal) },
+      { channel: "rpm", value: Math.round(rpmSmoothed) },
       { channel: "speed", value: Math.round(speedKph * 10) / 10 },
       // Raw voltages
       { channel: "ect_voltage", value: Math.round(ectV * 1000) / 1000 },
