@@ -1,3 +1,5 @@
+@import "./fonts.css";
+
 :root {
   --bg: #0a0a0a;
   --panel-bg: #0d0d12;
@@ -10,7 +12,7 @@
   --text: #999;
   --text-bright: #eee;
   --text-dim: rgba(255, 255, 255, 0.2);
-  --font: "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  --font: "Berkeley Mono", "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -20,6 +22,7 @@ body {
   color: var(--text);
   font-family: var(--font);
   font-size: 13px;
+  letter-spacing: -0.03em;
   height: 100vh;
   display: flex;
   flex-direction: column;

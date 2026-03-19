@@ -329,6 +329,7 @@ async function main(): Promise<void> {
       { channel: "gear", value: currentGear, ts },
       { channel: "brake", value: gForceX > 0.15 ? 1 : 0, ts },
       { channel: "battery_voltage", value: Math.round(jitter(13.8, 0.3) * 10) / 10, ts },
+      { channel: "vss_hz", value: Math.round(jitter(speed / 3.6 * 4000 / 1000, 5) * 10) / 10, ts },
       { channel: "tps_voltage", value: Math.round(jitter(tpsToVoltage(throttlePos), ADC_NOISE) * 1000) / 1000, ts },
       { channel: "ect_voltage", value: Math.round(jitter(ectToVoltage(coolantTemp), ADC_NOISE) * 1000) / 1000, ts },
       { channel: "map_voltage", value: Math.round(jitter(mapToVoltage(mapKpa), ADC_NOISE) * 1000) / 1000, ts },

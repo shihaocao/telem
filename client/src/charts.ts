@@ -122,12 +122,12 @@ export function createPanels(mgr: TelemetryManager): ChartPanel[] {
       <div class="gauge-label">出力 <span class="gauge-label-jp">THROTTLE</span></div>
       <div class="gauge-header">
         <span class="gauge-value" id="gauge-tps">--</span>
-        <span class="gauge-unit">% TPS</span>
+        <span class="gauge-unit">%TPS</span>
       </div>
     </div>
     <div class="gauge-divider"></div>
     <div class="gauge-label">制動 <span class="gauge-label-jp">BRAKE</span></div>
-    <div class="gauge-brake" id="gauge-brake">${Array(12).fill('<div class="gauge-brake-seg"></div>').join("")}</div>
+    <div class="gauge-brake" id="gauge-brake">${Array(10).fill('<div class="gauge-brake-seg"></div>').join("")}</div>
   `;
   container.appendChild(inner);
 

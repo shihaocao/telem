@@ -1,3 +1,5 @@
+@import "./fonts.css";
+
 :root {
   --bg: #0a0a0a;
   --panel-bg: #0d0d12;
@@ -11,7 +13,7 @@
   --text: #999;
   --text-bright: #eee;
   --text-dim: rgba(255, 255, 255, 0.2);
-  --font: "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  --font: "Berkeley Mono", "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -204,11 +206,31 @@ body::after {
   position: relative;
 }
 
-#review-sat-toggle {
+.sat-toggle {
   position: absolute;
   top: 8px;
   right: 8px;
-  z-index: 1000;
+  z-index: 900;
+  background: transparent;
+  border: 1px solid var(--border-bright);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.sat-toggle:hover {
+  border-color: var(--accent-dim);
+  color: var(--text-bright);
+}
+
+.sat-toggle.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }
 
 .leaflet-container { background: var(--panel-bg) !important; }
@@ -294,6 +316,36 @@ body::after {
   letter-spacing: 1px;
 }
 
+.review-gauge-gear {
+  margin-left: auto;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1;
+  text-shadow: 0 0 10px rgba(255, 107, 53, 0.4);
+}
+
+.review-brake {
+  display: flex;
+  gap: 3px;
+  height: 10px;
+  transform: skewX(-12deg);
+  padding: 0 4px;
+}
+
+.review-brake-seg {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 0.05s;
+}
+
+.review-brake.active .review-brake-seg {
+  background: var(--red);
+  border-color: var(--red);
+  box-shadow: 0 0 6px rgba(231, 76, 60, 0.4);
+}
+
 .review-seg-track {
   display: flex;
   gap: 2px;
@@ -349,32 +401,7 @@ body::after {
 
 /* ── Trail mode toggles ── */
 #review-trail-modes {
-  display: flex;
-  gap: 2px;
   flex-shrink: 0;
-}
-
-.trail-mode-btn {
-  background: transparent;
-  border: 1px solid var(--border-bright);
-  color: var(--text);
-  font-family: var(--font);
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  padding: 3px 8px;
-  cursor: pointer;
-}
-
-.trail-mode-btn:hover {
-  border-color: var(--accent-dim);
-  color: var(--text-bright);
-}
-
-.trail-mode-btn.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
 }
 
 /* ── Seek slider ── */

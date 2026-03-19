@@ -36,10 +36,16 @@
  *     Through 4.3× voltage divider. Already scaled in firmware.
  *
  *   RPM (Tach) — Pin D18 (INT3)
- *     2 pulses per revolution. Already computed to RPM in firmware.
+ *     12V square wave through R1=33k R2=20k voltage divider.
+ *     4.5 pulses per revolution (measured: 60 edges @ 800rpm, 180 @ 2400rpm).
+ *     Firmware computes RPM from ring-buffer averaged frequency.
+ *     500ms timeout → 0 when engine off.
  *
  *   VSS (Vehicle Speed Sensor) — Pin D19 (INT2)
- *     Frequency in Hz. Convert to km/h: speed = vss_hz * 3600 / VSS_PULSES_PER_KM
+ *     12V square wave through R1=33k R2=20k voltage divider.
+ *     Ring-buffer averaged frequency in Hz.
+ *     Convert to km/h: speed = vss_hz * 3600 / VSS_PULSES_PER_KM
+ *     500ms timeout → 0 when stopped.
  *
  * Usage: npx tsx scripts/serial-bridge.ts [serial_port]
  *   serial_port defaults to /dev/ttyACM0

@@ -1,3 +1,4 @@
+@import "./fonts.css";
 @import "uplot/dist/uPlot.min.css";
 
 * {
@@ -24,7 +25,7 @@
   --text: #999;
   --text-bright: #eee;
   --text-dim: rgba(255, 255, 255, 0.2);
-  --font: "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  --font: "Berkeley Mono", "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
 }
 
 body {
@@ -32,6 +33,7 @@ body {
   color: var(--text);
   font-family: var(--font);
   font-size: 13px;
+  letter-spacing: -0.03em;
   height: 100vh;
   display: flex;
   flex-direction: column;
@@ -423,14 +425,14 @@ body::after {
   flex-direction: column;
   justify-content: center;
   height: 100%;
-  padding: 28px 24px 16px;
-  gap: 24px;
+  padding: 24px 24px 12px;
+  gap: 14px;
 }
 
 .gauge {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 4px;
 }
 
 .gauge-label {
@@ -457,10 +459,11 @@ body::after {
 }
 
 .gauge-value {
-  font-size: 56px;
+  font-size: 42px;
   font-weight: 700;
   color: #fff;
   line-height: 1;
+  letter-spacing: -0.04em;
   text-shadow: 0 0 15px rgba(255, 255, 255, 0.3), 0 0 40px rgba(255, 107, 53, 0.1);
 }
 
@@ -491,7 +494,7 @@ body::after {
 .gauge-brake {
   display: flex;
   gap: 3px;
-  height: 20px;
+  height: 10px;
   transform: skewX(-12deg);
   padding: 0 6px;
 }
@@ -592,6 +595,7 @@ body::after {
   font-weight: 700;
   color: #fff;
   line-height: 1;
+  letter-spacing: -0.04em;
   text-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
 }
 
@@ -746,6 +750,7 @@ body::after {
   font-size: 22px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
   border-bottom: 1px solid var(--border-bright);
   min-height: 24px;
   text-align: right;
@@ -775,6 +780,7 @@ body::after {
   text-align: right;
   font-size: 22px;
   font-weight: 700;
+  letter-spacing: -0.04em;
   color: #fff;
   font-variant-numeric: tabular-nums;
   text-shadow: 0 0 10px rgba(255, 255, 255, 0.2);

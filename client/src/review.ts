@@ -5,6 +5,7 @@ import "leaflet/dist/leaflet.css";
 import "leaflet-rotate";
 import { TRACKS, type TrackDef } from "./track";
 import { speedToColor, throttleToColor } from "./track-utils";
+import { createDropdown } from "./dropdown";
 
 const REMOTE_URL = ((import.meta.env.VITE_SERVER_URL as string) ?? "http://gearados-nx.tail62d295.ts.net:4400").replace(/\/$/, "");
 const LOCAL_URL = "http://localhost:4400";
@@ -34,13 +35,18 @@ let lapSpeeds: number[] = [];
 let lapThrottles: number[] = [];
 let lapGx: number[] = [];
 let lapGy: number[] = [];
+let lapRpms: number[] = [];
+let lapGears: number[] = [];
+let lapBrakes: number[] = [];
 let lapTimestamps: number[] = [];
-let trailMode: "speed" | "throttle" = "speed";
+let trailMode: "speed" | "throttle" | "rpm" | "gear" | "brake" = "speed";
 
 const KMH_TO_MPH = 0.621371;
 const MAX_MPH = 120;
+const MAX_RPM = 7000;
 const SPEED_SEGS = 24;
 const TPS_SEGS = 16;
+const RPM_SEGS = 20;
 
 // ── DOM ──
 const metaEl = document.getElementById("review-meta")!;
@@ -53,17 +59,36 @@ const legendEl = document.getElementById("review-legend")!;
 const seekEl = document.getElementById("review-seek") as HTMLInputElement;
 const seekTimeEl = document.getElementById("review-seek-time")!;
 
-// ── Trail mode toggles ──
-const trailModeBtns = document.querySelectorAll(".trail-mode-btn");
-trailModeBtns.forEach((btn) => {
-  btn.addEventListener("click", () => {
-    trailMode = (btn as HTMLElement).dataset.mode as typeof trailMode;
-    trailModeBtns.forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-    drawTrail();
-    renderLegend();
-  });
-});
+// ── Trail mode dropdown (opens upward) ──
+type TrailMode = "speed" | "throttle" | "rpm" | "gear" | "brake";
+const trailModeDropdown = createDropdown("SPEED", "", "up");
+trailModeDropdown.setOptions([
+  { value: "speed", label: "SPEED" },
+  { value: "throttle", label: "THROTTLE" },
+  { value: "rpm", label: "RPM" },
+  { value: "gear", label: "GEAR" },
+  { value: "brake", label: "BRAKE" },
+]);
+trailModeDropdown.setValue("speed");
+trailModeDropdown.onChange = (v) => {
+  trailMode = v as TrailMode;
+  drawTrail();
+  renderLegend();
+};
+document.getElementById("review-trail-modes")!.appendChild(trailModeDropdown.el);
+
+// Trail color functions for each mode
+const GEAR_COLORS = ["#3498db", "#ffffff", "#f1c40f", "#ff6b35", "#e74c3c"];
+function gearToColor(gear: number): string {
+  return GEAR_COLORS[Math.max(0, Math.min(gear - 1, GEAR_COLORS.length - 1))] ?? "#999";
+}
+function rpmToColor(rpm: number): string {
+  const f = Math.min(1, rpm / MAX_RPM);
+  if (f < 0.6) return "rgb(255,255,255)";
+  if (f < 0.8) { const t = (f - 0.6) / 0.2; return `rgb(255,${Math.round(255 - 148 * t)},${Math.round(255 - 202 * t)})`; }
+  const t = (f - 0.8) / 0.2;
+  return `rgb(${Math.round(255 - 24 * t)},${Math.round(107 - 31 * t)},${Math.round(53 + 7 * t)})`;
+}
 
 // ── Map ──
 const map = L.map(mapEl, {
@@ -213,6 +238,33 @@ throttleGauge.appendChild(tpsSegTrack);
 gaugesEl.appendChild(throttleGauge);
 const throttleValueEl = throttleGauge.querySelector("#rv-throttle")!;
 
+// RPM gauge with gear badge
+const rpmGauge = document.createElement("div");
+rpmGauge.className = "review-gauge";
+rpmGauge.innerHTML = `<div class="review-gauge-label">回転 RPM</div><div class="review-gauge-header"><span class="review-gauge-value" id="rv-rpm">--</span><span class="review-gauge-unit">RPM</span><span class="review-gauge-gear" id="rv-gear">--</span></div>`;
+const rpmSegTrack = makeSegTrack(RPM_SEGS);
+rpmGauge.appendChild(rpmSegTrack);
+gaugesEl.appendChild(rpmGauge);
+const rpmValueEl = rpmGauge.querySelector("#rv-rpm")!;
+const gearValueEl = rpmGauge.querySelector("#rv-gear")!;
+
+// Brake bar
+const brakeWrap = document.createElement("div");
+brakeWrap.className = "review-gauge";
+brakeWrap.innerHTML = `<div class="review-gauge-label">制動 BRAKE</div><div class="review-brake" id="rv-brake">${Array(10).fill('<div class="review-brake-seg"></div>').join("")}</div>`;
+gaugesEl.appendChild(brakeWrap);
+const brakeEl = brakeWrap.querySelector("#rv-brake")!;
+
+function rpmColor(fraction: number): string {
+  if (fraction < 0.6) return "rgb(255,255,255)";
+  if (fraction < 0.8) {
+    const t = (fraction - 0.6) / 0.2;
+    return `rgb(255,${Math.round(255 - 148 * t)},${Math.round(255 - 202 * t)})`;
+  }
+  const t = (fraction - 0.8) / 0.2;
+  return `rgb(${Math.round(255 - 24 * t)},${Math.round(107 - 31 * t)},${Math.round(53 + 7 * t)})`;
+}
+
 function updateGaugeSegs(track: HTMLElement, fraction: number, colorFn: (idx: number, total: number) => string) {
   const segs = track.children;
   const lit = Math.round(fraction * segs.length);
@@ -249,9 +301,35 @@ const THROTTLE_LEGEND: LegendStop[] = [
   { color: "rgb(231,76,60)", label: "90-100%" },
 ];
 
+const RPM_LEGEND: LegendStop[] = [
+  { color: "rgb(255,255,255)", label: "0-4200" },
+  { color: "rgb(255,107,53)", label: "4200-5600" },
+  { color: "rgb(231,76,60)", label: "5600-7000" },
+];
+
+const GEAR_LEGEND: LegendStop[] = [
+  { color: "#3498db", label: "1ST" },
+  { color: "#ffffff", label: "2ND" },
+  { color: "#f1c40f", label: "3RD" },
+  { color: "#ff6b35", label: "4TH" },
+  { color: "#e74c3c", label: "5TH" },
+];
+
+const BRAKE_LEGEND: LegendStop[] = [
+  { color: "rgba(255,255,255,0.3)", label: "OFF" },
+  { color: "#e74c3c", label: "ON" },
+];
+
+const LEGENDS: Record<TrailMode, { title: string; stops: LegendStop[] }> = {
+  speed: { title: "SPEED", stops: SPEED_LEGEND },
+  throttle: { title: "THROTTLE", stops: THROTTLE_LEGEND },
+  rpm: { title: "RPM", stops: RPM_LEGEND },
+  gear: { title: "GEAR", stops: GEAR_LEGEND },
+  brake: { title: "BRAKE", stops: BRAKE_LEGEND },
+};
+
 function renderLegend() {
-  const stops = trailMode === "throttle" ? THROTTLE_LEGEND : SPEED_LEGEND;
-  const title = trailMode === "throttle" ? "THROTTLE" : "SPEED";
+  const { title, stops } = LEGENDS[trailMode];
   legendEl.innerHTML = `<div class="legend-title">${title}</div>`;
   for (const s of stops) {
     const row = document.createElement("div");
@@ -295,8 +373,8 @@ function renderSessionList() {
     row.className = `review-session${session?.id === s.id ? " selected" : ""}`;
     row.innerHTML =
       `<span class="review-session-driver">${s.driver || "UNKNOWN"}</span>` +
-      `<span class="review-session-info">${formatDate(s.createdAt)}${s.running ? " // LIVE" : ""}</span>` +
-      `<span class="review-session-laps">${s.laps.length} laps</span>` +
+      `<span class="review-session-info">${TRACKS[s.track]?.name ?? s.track}</span>` +
+      `<span class="review-session-info">${formatDate(s.createdAt)}${s.running ? " // LIVE" : ""} // ${s.laps.length} laps</span>` +
       `<button class="review-session-del" data-id="${s.id}" title="Delete">\u00d7</button>`;
     row.addEventListener("click", (e) => {
       if ((e.target as HTMLElement).closest(".review-session-del")) return;
@@ -348,12 +426,17 @@ function clearLapView() {
   trailLines = [];
   if (posMarker) { posMarker.remove(); posMarker = null; }
   lapListEl.innerHTML = "";
-  lapCoords = []; lapSpeeds = []; lapThrottles = []; lapGx = []; lapGy = []; lapTimestamps = []; lapEntries = [];
+  lapCoords = []; lapSpeeds = []; lapThrottles = []; lapGx = []; lapGy = [];
+  lapRpms = []; lapGears = []; lapBrakes = []; lapTimestamps = []; lapEntries = [];
   seekEl.value = "0"; seekTimeEl.textContent = "0:00.000";
   speedValueEl.textContent = "--";
   throttleValueEl.textContent = "--";
+  rpmValueEl.textContent = "--";
+  gearValueEl.textContent = "--";
+  brakeEl.classList.remove("active");
   updateGaugeSegs(speedSegTrack, 0, () => "");
   updateGaugeSegs(tpsSegTrack, 0, () => "");
+  updateGaugeSegs(rpmSegTrack, 0, () => "");
   drawGCircle(0, 0);
 }
 
@@ -397,7 +480,7 @@ async function selectLap(idx: number) {
   renderLapList();
 
   const lap = session.laps[idx];
-  const channels = "gps_lat,gps_lon,gps_speed,gps_heading,throttle_pos,g_force_x,g_force_y,coolant_temp,manifold_pressure";
+  const channels = "gps_lat,gps_lon,gps_speed,gps_heading,throttle_pos,g_force_x,g_force_y,rpm,gear,brake,coolant_temp,manifold_pressure";
   const data = await apiFetch(`/wal/range?start_seq=${lap.startSeq}&end_seq=${lap.endSeq}&channels=${channels}`);
   lapEntries = data.entries;
 
@@ -408,7 +491,8 @@ async function selectLap(idx: number) {
     rec[e.channel] = e.value;
   }
 
-  lapCoords = []; lapSpeeds = []; lapThrottles = []; lapGx = []; lapGy = []; lapTimestamps = [];
+  lapCoords = []; lapSpeeds = []; lapThrottles = []; lapGx = []; lapGy = [];
+  lapRpms = []; lapGears = []; lapBrakes = []; lapTimestamps = [];
   const sortedTs = Array.from(byTs.keys()).sort((a, b) => a - b);
   for (const ts of sortedTs) {
     const rec = byTs.get(ts)!;
@@ -418,6 +502,9 @@ async function selectLap(idx: number) {
       lapThrottles.push(rec.throttle_pos ?? 0);
       lapGx.push(rec.g_force_x ?? 0);
       lapGy.push(rec.g_force_y ?? 0);
+      lapRpms.push(rec.rpm ?? 0);
+      lapGears.push(rec.gear ?? 0);
+      lapBrakes.push(rec.brake ?? 0);
       lapTimestamps.push(ts);
     }
   }
@@ -433,8 +520,15 @@ function drawTrail() {
   trailLines = [];
   if (lapCoords.length < 2) return;
 
-  const values = trailMode === "throttle" ? lapThrottles : lapSpeeds;
-  const colorFn = trailMode === "throttle" ? throttleToColor : speedToColor;
+  const valuesMap: Record<TrailMode, number[]> = {
+    speed: lapSpeeds, throttle: lapThrottles, rpm: lapRpms, gear: lapGears, brake: lapBrakes,
+  };
+  const colorFnMap: Record<TrailMode, (v: number) => string> = {
+    speed: speedToColor, throttle: throttleToColor, rpm: rpmToColor,
+    gear: gearToColor, brake: (v) => v > 0.5 ? "#e74c3c" : "rgba(255,255,255,0.3)",
+  };
+  const values = valuesMap[trailMode];
+  const colorFn = colorFnMap[trailMode];
   const bucketSize = Math.max(1, Math.ceil(lapCoords.length / 80));
 
   for (let b = 0; b < lapCoords.length - 1; b += bucketSize) {
@@ -444,7 +538,19 @@ function drawTrail() {
 
     let sum = 0, cnt = 0;
     for (let j = b; j < Math.min(b + bucketSize, values.length); j++) { sum += values[j]; cnt++; }
-    const color = colorFn(cnt > 0 ? sum / cnt : 0);
+    const avg = cnt > 0 ? sum / cnt : 0;
+    // For gear, use mode (most common) instead of average
+    let color: string;
+    if (trailMode === "gear") {
+      const counts: Record<number, number> = {};
+      for (let j = b; j < Math.min(b + bucketSize, values.length); j++) {
+        counts[values[j]] = (counts[values[j]] ?? 0) + 1;
+      }
+      const modeGear = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+      color = gearToColor(modeGear ? parseInt(modeGear[0]) : 0);
+    } else {
+      color = colorFn(avg);
+    }
 
     const line = L.polyline(slice as L.LatLngExpression[], { color, weight: 3, opacity: 0.8 }).addTo(map);
     trailLines.push(line);
@@ -490,6 +596,16 @@ function updateSeek(idx: number) {
   updateGaugeSegs(tpsSegTrack, Math.min(1, tps / 100), (i, n) => {
     return throttleToColor(((i + 1) / n) * 100);
   });
+
+  // RPM gauge + gear
+  const rpmVal = lapRpms[idx] ?? 0;
+  rpmValueEl.textContent = String(Math.round(rpmVal));
+  updateGaugeSegs(rpmSegTrack, Math.min(1, rpmVal / MAX_RPM), (i, n) => rpmColor((i + 1) / n));
+  const gear = lapGears[idx] ?? 0;
+  gearValueEl.textContent = gear > 0 ? String(gear) : "N";
+
+  // Brake
+  brakeEl.classList.toggle("active", (lapBrakes[idx] ?? 0) > 0.5);
 }
 
 seekEl.addEventListener("input", () => updateSeek(parseInt(seekEl.value, 10)));

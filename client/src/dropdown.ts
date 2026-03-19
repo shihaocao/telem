@@ -18,13 +18,14 @@ export interface Dropdown {
 export function createDropdown(
   placeholder: string,
   className = "",
+  direction: "down" | "up" = "down",
 ): Dropdown {
   const el = document.createElement("div");
-  el.className = `dropdown ${className}`;
+  el.className = `dropdown ${className}${direction === "up" ? " dropdown-up" : ""}`;
 
   const trigger = document.createElement("button");
   trigger.className = "dropdown-trigger";
-  trigger.textContent = placeholder;
+  trigger.innerHTML = `<span class="dropdown-label">${placeholder}</span><span class="dropdown-chevron"></span>`;
 
   const menu = document.createElement("div");
   menu.className = "dropdown-menu";
@@ -36,6 +37,8 @@ export function createDropdown(
   let current = "";
   let open = false;
   let onChange: ((value: string) => void) | null = null;
+
+  const labelEl = trigger.querySelector(".dropdown-label")!;
 
   function close() {
     open = false;
@@ -65,7 +68,7 @@ export function createDropdown(
       item.addEventListener("click", (e) => {
         e.stopPropagation();
         current = opt.value;
-        trigger.textContent = opt.label;
+        labelEl.textContent = opt.label;
         close();
         render();
         onChange?.(current);
@@ -88,15 +91,14 @@ export function createDropdown(
     setOptions(opts: DropdownOption[]) {
       options = opts;
       render();
-      // update label if current value still exists
       const match = options.find((o) => o.value === current);
-      if (match) trigger.textContent = match.label;
-      else if (!current) trigger.textContent = placeholder;
+      if (match) labelEl.textContent = match.label;
+      else if (!current) labelEl.textContent = placeholder;
     },
     setValue(value: string) {
       current = value;
       const match = options.find((o) => o.value === value);
-      trigger.textContent = match ? match.label : placeholder;
+      labelEl.textContent = match ? match.label : placeholder;
       render();
     },
   };

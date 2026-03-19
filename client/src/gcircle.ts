@@ -53,11 +53,10 @@ export function createGCircle(
 
     const gxBuf = mgr.getBuffer("g_force_x");
     const gyBuf = mgr.getBuffer("g_force_y");
-    if (!gxBuf || !gyBuf || gxBuf.values.length === 0) return;
 
-    const len = Math.min(gxBuf.values.length, gyBuf.values.length);
-    const gx = gxBuf.values[len - 1]; // longitudinal
-    const gy = gyBuf.values[len - 1]; // lateral
+    const len = Math.min(gxBuf?.values.length ?? 0, gyBuf?.values.length ?? 0);
+    const gx = len > 0 ? gxBuf!.values[len - 1] : 0;
+    const gy = len > 0 ? gyBuf!.values[len - 1] : 0;
 
     const rawX = gy;     // lateral = x-axis
     const rawY = -gx;    // braking(+) = up
