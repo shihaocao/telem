@@ -11,12 +11,10 @@ constexpr uint32_t TELEMETRY_PERIOD_MS = 40; // 25 Hz
 // ECT A8
 // TPS A9
 // MAP A10
-
 // Brake Indicator voltage divided by 4.3X - A5
 // Battery Voltage - voltage divided by 4.3X - A6
-
-// RPM 12V voltage digital square divided by 4.3X - D18
-// VSS 12V voltage digital square divided by 4.3X - D19
+// RPM 12V voltage digital square divided by R1=33k R2=20k - D18
+// VSS 12V voltage digital square divided by R1=33k R2=20k - D19
 // End source of truth
 
 // Analog pins
@@ -31,24 +29,70 @@ constexpr float ADC_MAX = 1023.0f;
 constexpr float VDIV_RATIO = 4.3f;
 
 // Interrupt pins (Mega 2560: pin 18 = INT3, pin 19 = INT2)
-constexpr int PIN_TACH = 18;  // INT3 — RPM signal, 12V square wave through 4.3× voltage divider
-constexpr int PIN_VSS  = 19;  // INT2 — VSS signal, 12V square wave through 4.3× voltage divider
+constexpr int PIN_TACH = 18;
+constexpr int PIN_VSS  = 19;
 
 // Tach: 2 pulses per revolution (F22A)
 constexpr float TACH_PULSES_PER_REV = 2.0f;
 
-// VSS: pulses per km — calibrate this on track
-constexpr float VSS_PULSES_PER_KM = 4000.0f; // placeholder, needs calibration
+// Ring buffer size for period averaging
+constexpr int RING_N = 10;
 
-volatile unsigned long vss_count = 0;
-volatile unsigned long tach_count = 0;
+// Timeout: if no pulse for this long, signal is considered dead (e.g. engine off)
+constexpr unsigned long SIGNAL_TIMEOUT_US = 500000; // 500ms
 
-void vssISR() {
-    vss_count++;
-}
+struct PulseRing {
+    volatile unsigned long timestamps[RING_N];
+    volatile int head;           // next write index
+    volatile int count;          // how many valid entries (0..RING_N)
+    volatile unsigned long last_pulse_us;
+
+    void init() {
+        head = 0;
+        count = 0;
+        last_pulse_us = 0;
+        for (int i = 0; i < RING_N; i++) timestamps[i] = 0;
+    }
+
+    void recordPulse() {
+        unsigned long now = micros();
+        timestamps[head] = now;
+        head = (head + 1) % RING_N;
+        if (count < RING_N) count++;
+        last_pulse_us = now;
+    }
+
+    // Returns average frequency in Hz, called from main loop with interrupts disabled
+    float avgFrequency(unsigned long now_us) const {
+        // Signal dead?
+        if (count < 2) return 0.0f;
+        if ((now_us - last_pulse_us) > SIGNAL_TIMEOUT_US) return 0.0f;
+
+        // Find oldest and newest timestamps in the buffer
+        // newest is at (head - 1), oldest is at (head - count)
+        int newest_idx = (head - 1 + RING_N) % RING_N;
+        int oldest_idx = (head - count + RING_N) % RING_N;
+
+        unsigned long newest = timestamps[newest_idx];
+        unsigned long oldest = timestamps[oldest_idx];
+        unsigned long span = newest - oldest; // micros wraps correctly via unsigned subtraction
+
+        if (span == 0) return 0.0f;
+
+        // (count - 1) periods span this time range
+        return (float)(count - 1) * 1000000.0f / (float)span;
+    }
+};
+
+volatile PulseRing tach_ring;
+volatile PulseRing vss_ring;
 
 void tachISR() {
-    tach_count++;
+    ((PulseRing*)&tach_ring)->recordPulse();
+}
+
+void vssISR() {
+    ((PulseRing*)&vss_ring)->recordPulse();
 }
 
 void setup() {
@@ -61,8 +105,11 @@ void setup() {
     pinMode(PIN_VSS, INPUT);
     pinMode(PIN_TACH, INPUT);
 
-    attachInterrupt(digitalPinToInterrupt(PIN_VSS), vssISR, RISING);
+    ((PulseRing*)&tach_ring)->init();
+    ((PulseRing*)&vss_ring)->init();
+
     attachInterrupt(digitalPinToInterrupt(PIN_TACH), tachISR, RISING);
+    attachInterrupt(digitalPinToInterrupt(PIN_VSS), vssISR, RISING);
 
     Serial.begin(115200);
     while (!Serial && millis() < 3000) {}
@@ -88,21 +135,15 @@ void loop() {
         float brake = analogRead(PIN_BRAKE) * (VREF / ADC_MAX) * VDIV_RATIO;
         float vbatt = analogRead(PIN_VBATT) * (VREF / ADC_MAX) * VDIV_RATIO;
 
-        // Snapshot and reset pulse counters atomically
+        // Snapshot ring buffer state with interrupts disabled
         noInterrupts();
-        unsigned long vss_snap = vss_count;
-        unsigned long tach_snap = tach_count;
-        vss_count = 0;
-        tach_count = 0;
+        unsigned long now_us = micros();
+        float tach_hz = ((PulseRing*)&tach_ring)->avgFrequency(now_us);
+        float vss_hz = ((PulseRing*)&vss_ring)->avgFrequency(now_us);
         interrupts();
 
-        // Calculate RPM from tach pulses in this 40ms window
-        float rpm = (tach_snap / TACH_PULSES_PER_REV)
-                    * (1000.0f / TELEMETRY_PERIOD_MS)
-                    * 60.0f;
-
-        // VSS frequency in Hz
-        float vss_hz = vss_snap * (1000.0f / TELEMETRY_PERIOD_MS);
+        // RPM from tach frequency
+        float rpm = tach_hz * 60.0f / TACH_PULSES_PER_REV;
 
         // Print: "ect tps map brake vbatt rpm vss_hz\n"
         Serial.print(ect, 3);    Serial.print(" ");
