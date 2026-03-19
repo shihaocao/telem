@@ -32,8 +32,9 @@ constexpr float VDIV_RATIO = 4.3f;
 constexpr int PIN_TACH = 18;
 constexpr int PIN_VSS  = 19;
 
-// Tach: F22A 4-cylinder, calibrated against known RPM points
-constexpr float TACH_PULSES_PER_REV = 4.0f;
+// Tach: F22A 4-cylinder
+// Empirical: firmware reads 1.25x high at 4.0 ppr → corrected to 5.0
+constexpr float TACH_PULSES_PER_REV = 5.0f;
 
 // Ring buffer size — smaller = more responsive, larger = smoother
 constexpr int RING_N = 16;

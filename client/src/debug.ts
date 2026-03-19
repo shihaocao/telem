@@ -89,11 +89,15 @@ function getOrCreate(name: string): Channel {
       <span class="ch-name">${name}</span>
       <span class="ch-value">--</span>
     </div>
-    <canvas class="ch-canvas"></canvas>
+    <div class="ch-canvas-wrap">
+      <canvas class="ch-canvas"></canvas>
+      <div class="ch-tooltip"></div>
+    </div>
   `;
   container.appendChild(el);
 
   const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+  const tooltip = el.querySelector(".ch-tooltip") as HTMLElement;
   const ch: Channel = {
     el,
     valueEl: el.querySelector(".ch-value") as HTMLElement,
@@ -102,11 +106,33 @@ function getOrCreate(name: string): Channel {
     values: [],
     recent: [],
   };
+
+  // Hover readout
+  canvas.addEventListener("mousemove", (e) => {
+    if (ch.values.length < 2) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const frac = x / rect.width;
+    const idx = Math.round(frac * (ch.values.length - 1));
+    const val = ch.values[Math.max(0, Math.min(idx, ch.values.length - 1))];
+    tooltip.textContent = val.toFixed(3);
+    tooltip.style.left = `${x}px`;
+    tooltip.style.display = "block";
+
+    // Redraw with crosshair
+    drawSparkline(ch, x / rect.width);
+  });
+
+  canvas.addEventListener("mouseleave", () => {
+    tooltip.style.display = "none";
+    drawSparkline(ch);
+  });
+
   channels.set(name, ch);
   return ch;
 }
 
-function drawSparkline(ch: Channel): void {
+function drawSparkline(ch: Channel, cursorFrac?: number): void {
   const { canvas, ctx, values } = ch;
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.clientWidth;
@@ -127,16 +153,45 @@ function drawSparkline(ch: Channel): void {
   const range = max - min || 1;
   const pad = range * 0.1;
 
+  function yPos(v: number): number {
+    return h - ((v - min + pad) / (range + pad * 2)) * h;
+  }
+
   ctx.beginPath();
   for (let i = 0; i < values.length; i++) {
     const x = (i / (values.length - 1)) * w;
-    const y = h - ((values[i] - min + pad) / (range + pad * 2)) * h;
+    const y = yPos(values[i]);
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   }
   ctx.strokeStyle = "rgba(255, 107, 53, 0.5)";
   ctx.lineWidth = 1.5;
   ctx.stroke();
+
+  // Crosshair at cursor
+  if (cursorFrac !== undefined) {
+    const cx = cursorFrac * w;
+    const idx = Math.round(cursorFrac * (values.length - 1));
+    const val = values[Math.max(0, Math.min(idx, values.length - 1))];
+    const cy = yPos(val);
+
+    // Vertical line
+    ctx.beginPath();
+    ctx.moveTo(cx, 0);
+    ctx.lineTo(cx, h);
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Dot
+    ctx.beginPath();
+    ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+    ctx.fillStyle = "#ff6b35";
+    ctx.fill();
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
 }
 
 function connect(): void {
