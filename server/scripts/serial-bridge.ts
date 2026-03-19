@@ -54,7 +54,6 @@
 import { createInterface } from "readline";
 import { createReadStream } from "fs";
 import { execSync } from "child_process";
-import { inferGearFromRatio } from "../src/gear.js";
 
 const SERIAL_PORT = process.argv[2] || "/dev/ttyACM0";
 const INGEST_URL = process.env.INGEST_URL || "http://localhost:4400/ingest";
@@ -141,7 +140,6 @@ async function main() {
     if ([ectV, tpsV, mapV, brakeV, vbatt, rpmVal, vssHz].some(isNaN)) return;
 
     const speedKph = vssToKph(vssHz);
-    const gear = speedKph > 1 ? inferGearFromRatio(rpmVal, speedKph) : 0;
 
     const payload = [
       // Converted values
@@ -152,7 +150,6 @@ async function main() {
       { channel: "battery_voltage", value: Math.round(vbatt * 10) / 10 },
       { channel: "rpm", value: Math.round(rpmVal / 1.25) },
       { channel: "speed", value: Math.round(speedKph * 10) / 10 },
-      { channel: "gear", value: gear },
       // Raw voltages
       { channel: "ect_voltage", value: Math.round(ectV * 1000) / 1000 },
       { channel: "tps_voltage", value: Math.round(tpsV * 1000) / 1000 },

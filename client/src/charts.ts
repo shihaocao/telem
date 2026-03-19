@@ -1,5 +1,6 @@
 import { TelemetryManager } from "./telemetry";
 import { throttleToColor } from "./track-utils";
+import { inferGearFromRatio } from "../../server/src/gear";
 
 export interface ChartPanel {
   update: () => void;
@@ -162,10 +163,13 @@ export function createPanels(mgr: TelemetryManager): ChartPanel[] {
       updateSegments(rpmTrack, Math.min(1, rpmSmoothed / MAX_RPM), rpmColorFn);
     }
 
-    const gearBuf = mgr.getBuffer("gear");
-    if (gearBuf && gearBuf.values.length > 0) {
-      const g = gearBuf.values[gearBuf.values.length - 1];
-      gearVal.textContent = g > 0 ? String(g) : "N";
+    // Infer gear from RPM + GPS speed (more reliable than serial bridge gear)
+    const speedForGear = mgr.getSmoothed("gps_speed") ?? mgr.getSmoothed("speed");
+    if (rpmSmoothed != null && speedForGear != null && speedForGear > 3) {
+      const g = inferGearFromRatio(rpmSmoothed, speedForGear);
+      gearVal.textContent = String(g);
+    } else {
+      gearVal.textContent = rpmSmoothed != null && rpmSmoothed > 500 ? "N" : "--";
     }
 
     const brakeBuf = mgr.getBuffer("brake");

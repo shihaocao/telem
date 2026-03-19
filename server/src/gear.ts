@@ -1,17 +1,17 @@
-// H2U5 transmission — 1992 Honda Accord EX
+// 1992 Honda Accord EX — H2U5 5-speed manual (F22A4/F22A6)
 const TIRE_CIRCUMFERENCE_M = Math.PI * (15 * 0.0254 + 2 * 0.195 * 0.50); // ~1.810m
 
-const H2U5 = {
+const TRANS = {
   gearRatios: [3.307, 1.809, 1.185, 0.870, 0.685],
   finalDrive: 4.062,
 };
 
 function expectedRpmPerKph(gearRatio: number): number {
-  return (1 / 3.6) / TIRE_CIRCUMFERENCE_M * gearRatio * H2U5.finalDrive * 60;
+  return (1 / 3.6) / TIRE_CIRCUMFERENCE_M * gearRatio * TRANS.finalDrive * 60;
 }
 
-export const GEAR_RPM_PER_KPH = H2U5.gearRatios.map(expectedRpmPerKph);
-export const GEAR_COUNT = H2U5.gearRatios.length;
+export const GEAR_RPM_PER_KPH = TRANS.gearRatios.map(expectedRpmPerKph);
+export const GEAR_COUNT = TRANS.gearRatios.length;
 
 export function rpmFromSpeedAndGear(speedKph: number, gear: number): number {
   if (gear < 1 || gear > GEAR_COUNT) return 0;
