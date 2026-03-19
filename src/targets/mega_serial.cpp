@@ -15,8 +15,8 @@ constexpr uint32_t TELEMETRY_PERIOD_MS = 40; // 25 Hz
 // Brake Indicator voltage divided by 4.3X - A5
 // Battery Voltage - voltage divided by 4.3X - A6
 
-// VSS Opto Isolated down to 5V - D2
-// RPM Opto Isolated down to 5V - D3
+// RPM 12V voltage digital square divided by 4.3X - D18
+// VSS 12V voltage digital square divided by 4.3X - D19
 // End source of truth
 
 // Analog pins
@@ -30,9 +30,9 @@ constexpr float VREF = 5.0f;
 constexpr float ADC_MAX = 1023.0f;
 constexpr float VDIV_RATIO = 4.3f;
 
-// Interrupt pins
-constexpr int PIN_VSS = 2;   // INT0
-constexpr int PIN_TACH = 3;  // INT1
+// Interrupt pins (Mega 2560: pin 18 = INT3, pin 19 = INT2)
+constexpr int PIN_TACH = 18;  // INT3 — RPM signal, 12V square wave through 4.3× voltage divider
+constexpr int PIN_VSS  = 19;  // INT2 — VSS signal, 12V square wave through 4.3× voltage divider
 
 // Tach: 2 pulses per revolution (F22A)
 constexpr float TACH_PULSES_PER_REV = 2.0f;
