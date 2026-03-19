@@ -6,14 +6,11 @@ import "leaflet-rotate";
 import { TRACKS, type TrackDef } from "./track";
 import { createDropdown } from "./dropdown";
 
-import { TelemetryManager } from "./telemetry";
-
 const TILES = "https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png";
 const TILES_SAT = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 const TILE_OPTS: L.TileLayerOptions = { maxZoom: 20, subdomains: "abcd" };
 const TILE_OPTS_SAT: L.TileLayerOptions = { maxZoom: 20 };
 
-const serverUrl = new TelemetryManager().serverUrl;
 let currentTrackId = "";
 
 type Mode = "track" | "turn" | "finish" | "select";
@@ -329,38 +326,20 @@ function buildJson(): string {
   return JSON.stringify(obj, null, 2);
 }
 
-// ── Save to server ──
-document.getElementById("btn-save")!.addEventListener("click", async () => {
-  const id = currentTrackId || state.name.toLowerCase().replace(/\s+/g, "_");
-  const btn = document.getElementById("btn-save")!;
-  try {
-    const res = await fetch(`${serverUrl}/tracks/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: buildJson(),
-    });
-    if (!res.ok) throw new Error(await res.text());
-    currentTrackId = id;
-    btn.textContent = "SAVED!";
-  } catch (err) {
-    btn.textContent = "ERROR";
-    console.error("save failed:", err);
-  }
-  setTimeout(() => { btn.textContent = "SAVE"; }, 1500);
-});
-
 // ── Download ──
-document.getElementById("btn-download")!.addEventListener("click", () => {
+document.getElementById("btn-save")!.addEventListener("click", () => {
   const json = buildJson();
+  const id = currentTrackId || state.name.toLowerCase().replace(/\s+/g, "_");
   const blob = new Blob([json + "\n"], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${state.name.toLowerCase().replace(/\s+/g, "_")}.json`;
+  a.download = `${id}.json`;
   a.click();
   URL.revokeObjectURL(url);
 });
 
+// ── Download ──
 // ── Clear ──
 document.getElementById("btn-clear")!.addEventListener("click", () => {
   if (!confirm("Clear all track data?")) return;

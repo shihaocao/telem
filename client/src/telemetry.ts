@@ -7,6 +7,10 @@ const LOCAL_URL = "http://localhost:4400";
 const isLocal = new URLSearchParams(window.location.search).has("local");
 const SERVER_URL = isLocal ? LOCAL_URL : REMOTE_URL;
 
+export function getServerUrl(): string {
+  return SERVER_URL;
+}
+
 export class TelemetryManager {
   readonly serverUrl = SERVER_URL;
   private es: EventSource | null = null;
