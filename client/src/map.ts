@@ -154,9 +154,8 @@ export function createMaps(
     // update arrow icons when heading changes
     if (heading !== followHeading) {
       followHeading = heading;
-      const icon = makeArrowIcon(heading);
-      followMarker.setIcon(icon);
-      overviewMarker.setIcon(icon);
+      followMarker.setIcon(makeArrowIcon(heading));
+      overviewMarker.setIcon(makeArrowIcon(heading + trackDef.bearing));
     }
 
     // --- update follow map ---

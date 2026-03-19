@@ -58,7 +58,7 @@ describe("SessionStore", () => {
   describe("list", () => {
     it("returns all sessions", () => {
       const a = store.create("sonoma", 0);
-      const b = store.create("sf_block", 10);
+      const b = store.create("sharon", 10);
       const list = store.list();
       expect(list).toHaveLength(2);
       expect(new Set(list.map((s) => s.id))).toEqual(new Set([a.id, b.id]));
@@ -66,10 +66,10 @@ describe("SessionStore", () => {
 
     it("filters by track", () => {
       store.create("sonoma", 0);
-      store.create("sf_block", 0);
+      store.create("sharon", 0);
       store.create("sonoma", 0);
       expect(store.list("sonoma")).toHaveLength(2);
-      expect(store.list("sf_block")).toHaveLength(1);
+      expect(store.list("sharon")).toHaveLength(1);
     });
   });
 

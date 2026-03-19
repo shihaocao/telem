@@ -1,4 +1,6 @@
 import { TelemetryManager } from "./telemetry";
+import { getActiveTrack } from "./track";
+import { trackProgress } from "./track-utils";
 
 interface Lap {
   lap: number;
@@ -30,11 +32,19 @@ export function createLapTimes(
   const serverUrl = mgr.serverUrl;
   const trackId =
     new URLSearchParams(window.location.search).get("track") ?? "sonoma";
+  const trackDef = getActiveTrack();
 
   let session: Session | null = null;
   let sessionEs: EventSource | null = null;
   let saving = false;
 
+  // ── Pace reference: best lap progress→time curve ──
+  const finishProgress = trackProgress(trackDef.track, trackDef.finishLine[0], trackDef.finishLine[1]);
+  let bestLapIdx = -1;
+  // sorted array of { norm: 0-1, elapsed: ms } for the best lap
+  let bestCurve: { norm: number; elapsed: number }[] = [];
+
+  // ── DOM ──
   const wrapper = document.createElement("div");
   wrapper.className = "laptimes-wrapper";
   wrapper.innerHTML = `
@@ -46,6 +56,7 @@ export function createLapTimes(
       <span class="laptimes-lap-label">--</span>
       <span class="laptimes-timer">0:00.000</span>
     </div>
+    <div class="laptimes-delta" id="laptimes-delta"></div>
     <div class="laptimes-best-row">
       <span class="laptimes-best-label">BEST</span>
       <span class="laptimes-best-time">--</span>
@@ -58,6 +69,7 @@ export function createLapTimes(
   const driverInput = wrapper.querySelector("#laptimes-driver") as HTMLInputElement;
   const lapLabelEl = wrapper.querySelector(".laptimes-lap-label")!;
   const timerEl = wrapper.querySelector(".laptimes-timer")!;
+  const deltaEl = wrapper.querySelector("#laptimes-delta")!;
   const toggleBtn = wrapper.querySelector("#btn-laptimes-toggle") as HTMLButtonElement;
   const bestTimeEl = wrapper.querySelector(".laptimes-best-time")!;
   const listEl = wrapper.querySelector("#laptimes-list")!;
@@ -93,6 +105,65 @@ export function createLapTimes(
     }
   }
 
+  // ── Load best lap progress→time curve from WAL ──
+  async function loadBestCurve(): Promise<void> {
+    if (!session) { bestCurve = []; bestLapIdx = -1; return; }
+
+    const clean = session.laps
+      .map((l, i) => ({ ...l, idx: i }))
+      .filter((l) => l.flag === "clean");
+    if (clean.length === 0) { bestCurve = []; bestLapIdx = -1; return; }
+
+    const best = clean.reduce((a, b) => (a.time < b.time ? a : b));
+    if (best.idx === bestLapIdx) return;
+    bestLapIdx = best.idx;
+
+    try {
+      const data = await api("GET",
+        `/wal/range?start_seq=${best.startSeq}&end_seq=${best.endSeq}&channels=gps_lat,gps_lon`);
+      const entries: { ts: number; channel: string; value: number }[] = data.entries;
+
+      const byTs = new Map<number, { lat?: number; lon?: number }>();
+      for (const e of entries) {
+        let rec = byTs.get(e.ts);
+        if (!rec) { rec = {}; byTs.set(e.ts, rec); }
+        if (e.channel === "gps_lat") rec.lat = e.value;
+        else if (e.channel === "gps_lon") rec.lon = e.value;
+      }
+
+      bestCurve = [];
+      const sortedTs = Array.from(byTs.keys()).sort((a, b) => a - b);
+      const startTs = sortedTs[0] ?? 0;
+      for (const ts of sortedTs) {
+        const rec = byTs.get(ts)!;
+        if (rec.lat == null || rec.lon == null) continue;
+        const p = trackProgress(trackDef.track, rec.lat, rec.lon);
+        const norm = ((p - finishProgress) % 1 + 1) % 1;
+        bestCurve.push({ norm, elapsed: ts - startTs });
+      }
+    } catch {
+      bestCurve = [];
+      bestLapIdx = -1;
+    }
+  }
+
+  /** Interpolate best lap's elapsed time at a given normalized progress. */
+  function bestTimeAtProgress(norm: number): number | null {
+    if (bestCurve.length < 2) return null;
+    // Find the two points bracketing this progress
+    for (let i = 0; i < bestCurve.length - 1; i++) {
+      const a = bestCurve[i];
+      const b = bestCurve[i + 1];
+      // Handle forward progress (skip wrap-arounds)
+      if (a.norm <= norm && b.norm > norm && b.norm - a.norm < 0.5) {
+        const frac = (norm - a.norm) / (b.norm - a.norm);
+        return a.elapsed + frac * (b.elapsed - a.elapsed);
+      }
+    }
+    // If past all points, return last elapsed
+    return bestCurve[bestCurve.length - 1].elapsed;
+  }
+
   // ── SSE ──
   function subscribe(id: string): void {
     unsubscribe();
@@ -102,6 +173,7 @@ export function createLapTimes(
       session = updated;
       syncUI();
       renderList();
+      loadBestCurve();
     });
   }
 
@@ -116,6 +188,8 @@ export function createLapTimes(
       toggleBtn.classList.remove("active");
       lapLabelEl.textContent = "--";
       timerEl.textContent = "0:00.000";
+      deltaEl.textContent = "";
+      deltaEl.className = "laptimes-delta";
       reviewLink.style.display = "none";
       return;
     }
@@ -153,6 +227,7 @@ export function createLapTimes(
       syncUI();
       subscribe(session!.id);
       renderList();
+      /* reset */;
     }
   });
 
@@ -199,21 +274,53 @@ export function createLapTimes(
         session.laps[idx].flag = cur === "clean" ? "yellow" : cur === "yellow" ? "pit" : "clean";
         renderList();
         await saveSession();
+        loadBestCurve();
       });
     });
   }
 
-  // ── Frame update — tick the timer ──
+  // ── Frame update — timer + pace delta via progress interpolation ──
   function update() {
-    if (session?.running && session.lapStartTs) {
-      const currentLap = session.laps.length + 1;
-      const elapsed = Date.now() - session.lapStartTs;
-      lapLabelEl.textContent = `L${currentLap}`;
-      timerEl.textContent = formatTime(elapsed);
+    if (!session?.running || !session.lapStartTs) return;
+
+    const currentLap = session.laps.length + 1;
+    const elapsed = Date.now() - session.lapStartTs;
+    lapLabelEl.textContent = `L${currentLap}`;
+    timerEl.textContent = formatTime(elapsed);
+
+    // Need GPS + best curve for pace delta
+    if (bestCurve.length < 2 || currentLap <= 1) {
+      deltaEl.textContent = "";
+      deltaEl.className = "laptimes-delta";
+      return;
+    }
+
+    const latBuf = mgr.getBuffer("gps_lat");
+    const lonBuf = mgr.getBuffer("gps_lon");
+    if (!latBuf || !lonBuf || latBuf.values.length === 0) return;
+
+    const lat = latBuf.values[latBuf.values.length - 1];
+    const lon = lonBuf.values[lonBuf.values.length - 1];
+    if (lat === 0 && lon === 0) return;
+
+    const rawP = trackProgress(trackDef.track, lat, lon);
+    const norm = ((rawP - finishProgress) % 1 + 1) % 1;
+
+    // What time was the best lap at this same track position?
+    const bestElapsed = bestTimeAtProgress(norm);
+    if (bestElapsed === null) return;
+
+    const delta = elapsed - bestElapsed;
+    if (delta <= 0) {
+      deltaEl.textContent = `${(delta / 1000).toFixed(3)}`;
+      deltaEl.className = "laptimes-delta ahead";
+    } else {
+      deltaEl.textContent = `+${(delta / 1000).toFixed(3)}`;
+      deltaEl.className = "laptimes-delta behind";
     }
   }
 
-  // ── Init — auto-load latest session for this track ──
+  // ── Init ──
   async function init() {
     try {
       const sessions: Session[] = await api("GET", `/sessions?track=${trackId}`);
@@ -221,6 +328,7 @@ export function createLapTimes(
         session = sessions[0];
         syncUI();
         renderList();
+        await loadBestCurve();
         if (session.running) subscribe(session.id);
       }
     } catch {}

@@ -702,7 +702,27 @@ body::after {
   align-items: baseline;
   gap: 8px;
   padding: 6px 0;
+}
+
+.laptimes-delta {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
   border-bottom: 1px solid var(--border-bright);
+  min-height: 24px;
+  text-align: right;
+  padding-bottom: 12px;
+  margin: 0;
+}
+
+.laptimes-delta.ahead {
+  color: var(--green);
+  text-shadow: 0 0 8px rgba(46, 204, 113, 0.3);
+}
+
+.laptimes-delta.behind {
+  color: var(--red);
+  text-shadow: 0 0 8px rgba(231, 76, 60, 0.3);
 }
 
 .laptimes-lap-label {
@@ -713,6 +733,8 @@ body::after {
 }
 
 .laptimes-timer {
+  flex-basis: 100%;
+  text-align: right;
   font-size: 22px;
   font-weight: 700;
   color: #fff;

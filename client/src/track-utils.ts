@@ -28,6 +28,40 @@ export function snapToTrack(trackPts: [number, number][], lat: number, lon: numb
   return bestPt;
 }
 
+/** Compute fractional progress (0–1) of a point along a track polyline. */
+export function trackProgress(trackPts: [number, number][], lat: number, lon: number): number {
+  // Precompute cumulative segment lengths
+  const segDists = [0];
+  let total = 0;
+  for (let i = 1; i < trackPts.length; i++) {
+    const [aLat, aLon] = trackPts[i - 1];
+    const [bLat, bLon] = trackPts[i];
+    total += Math.sqrt((bLat - aLat) ** 2 + (bLon - aLon) ** 2);
+    segDists.push(total);
+  }
+  if (total === 0) return 0;
+
+  let bestDist = Infinity;
+  let bestProgress = 0;
+  for (let i = 0; i < trackPts.length - 1; i++) {
+    const [aLat, aLon] = trackPts[i];
+    const [bLat, bLon] = trackPts[i + 1];
+    const dx = bLon - aLon;
+    const dy = bLat - aLat;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) continue;
+    const t = Math.max(0, Math.min(1, ((lon - aLon) * dx + (lat - aLat) * dy) / lenSq));
+    const pLat = aLat + t * dy;
+    const pLon = aLon + t * dx;
+    const dist = (lat - pLat) ** 2 + (lon - pLon) ** 2;
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestProgress = (segDists[i] + t * (segDists[i + 1] - segDists[i])) / total;
+    }
+  }
+  return bestProgress;
+}
+
 // Speed-to-color (km/h): white (0-64) → yellow (64-80) → orange (80-129) → red (129+)
 const SPEED_COLORS: [number, [number, number, number]][] = [
   [0,   [255, 255, 255]],

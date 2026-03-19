@@ -6,8 +6,15 @@ import "leaflet-rotate";
 import { TRACKS, type TrackDef } from "./track";
 import { createDropdown } from "./dropdown";
 
+import { TelemetryManager } from "./telemetry";
+
 const TILES = "https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png";
+const TILES_SAT = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 const TILE_OPTS: L.TileLayerOptions = { maxZoom: 20, subdomains: "abcd" };
+const TILE_OPTS_SAT: L.TileLayerOptions = { maxZoom: 20 };
+
+const serverUrl = new TelemetryManager().serverUrl;
+let currentTrackId = "";
 
 type Mode = "track" | "turn" | "finish" | "select";
 
@@ -59,7 +66,16 @@ const map = L.map(mapContainer, {
   shiftKeyRotate: false,
   bearing: state.bearing,
 } as any).setView(state.center, state.zoom);
-L.tileLayer(TILES, TILE_OPTS).addTo(map);
+const darkTiles = L.tileLayer(TILES, TILE_OPTS).addTo(map);
+const satTiles = L.tileLayer(TILES_SAT, TILE_OPTS_SAT);
+let isSat = false;
+
+document.getElementById("btn-sat")?.addEventListener("click", () => {
+  isSat = !isSat;
+  document.getElementById("btn-sat")!.classList.toggle("active", isSat);
+  if (isSat) { map.removeLayer(darkTiles); satTiles.addTo(map); }
+  else { map.removeLayer(satTiles); darkTiles.addTo(map); }
+});
 
 // Layers
 const trackLine = L.polyline([], { color: "#ff6b35", weight: 2, opacity: 0.8 }).addTo(map);
@@ -313,13 +329,24 @@ function buildJson(): string {
   return JSON.stringify(obj, null, 2);
 }
 
-// ── Copy to clipboard ──
+// ── Save to server ──
 document.getElementById("btn-save")!.addEventListener("click", async () => {
-  const json = buildJson();
-  await navigator.clipboard.writeText(json);
+  const id = currentTrackId || state.name.toLowerCase().replace(/\s+/g, "_");
   const btn = document.getElementById("btn-save")!;
-  btn.textContent = "COPIED!";
-  setTimeout(() => { btn.textContent = "COPY"; }, 1500);
+  try {
+    const res = await fetch(`${serverUrl}/tracks/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: buildJson(),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    currentTrackId = id;
+    btn.textContent = "SAVED!";
+  } catch (err) {
+    btn.textContent = "ERROR";
+    console.error("save failed:", err);
+  }
+  setTimeout(() => { btn.textContent = "SAVE"; }, 1500);
 });
 
 // ── Download ──
@@ -371,7 +398,7 @@ function loadTrackList() {
     Object.entries(TRACKS).map(([id, t]) => ({ value: id, label: t.name })),
   );
   trackDropdown.onChange = (id) => {
-    if (TRACKS[id]) loadTrack(TRACKS[id]);
+    if (TRACKS[id]) { currentTrackId = id; loadTrack(TRACKS[id]); }
   };
   trackLoadContainer.appendChild(trackDropdown.el);
 
@@ -379,6 +406,7 @@ function loadTrackList() {
   const params = new URLSearchParams(window.location.search);
   const trackId = params.get("track");
   if (trackId && TRACKS[trackId]) {
+    currentTrackId = trackId;
     trackDropdown.setValue(trackId);
     loadTrack(TRACKS[trackId]);
   }

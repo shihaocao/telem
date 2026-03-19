@@ -1,5 +1,5 @@
 import sonoma from "../../tracks/sonoma.json";
-import sfBlock from "../../tracks/sf_block.json";
+import sharon from "../../tracks/sharon.json";
 
 export interface TrackDef {
   name: string;
@@ -13,7 +13,7 @@ export interface TrackDef {
 
 export const TRACKS: Record<string, TrackDef> = {
   sonoma: sonoma as TrackDef,
-  sf_block: sfBlock as TrackDef,
+  sharon: sharon as TrackDef,
 };
 
 export const DEFAULT_TRACK = "sonoma";

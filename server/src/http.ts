@@ -1,4 +1,6 @@
 import * as http from "node:http";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { execSync } from "node:child_process";
 import { WalEngine, WalEntry } from "./wal.js";
 import { SessionStore } from "./sessions.js";
@@ -6,7 +8,7 @@ import { LapDetector, type LapEvent } from "./lap-detector.js";
 
 function cors(res: http.ServerResponse): void {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
@@ -25,7 +27,7 @@ function readBody(req: http.IncomingMessage): Promise<string> {
   });
 }
 
-export function createServer(wal: WalEngine, sessions: SessionStore, lapDetector?: LapDetector): http.Server {
+export function createServer(wal: WalEngine, sessions: SessionStore, lapDetector?: LapDetector, tracksDir?: string): http.Server {
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     const pathname = url.pathname;
@@ -39,6 +41,13 @@ export function createServer(wal: WalEngine, sessions: SessionStore, lapDetector
     }
 
     try {
+      // Track save: PUT /tracks/:id
+      const trackMatch = pathname.match(/^\/tracks\/([a-zA-Z0-9_-]+)$/);
+      if (trackMatch && req.method === "PUT" && tracksDir) {
+        await handleTrackSave(req, res, tracksDir, trackMatch[1]);
+        return;
+      }
+
       // Session SSE stream: /sessions/:id/stream
       const streamMatch = pathname.match(/^\/sessions\/([a-zA-Z0-9_-]+)\/stream$/);
       if (streamMatch && req.method === "GET" && lapDetector) {
@@ -203,6 +212,27 @@ function handleQuery(url: URL, res: http.ServerResponse, wal: WalEngine): void {
 
   const entries = wal.queryByChannel(channel, { startTs, endTs, afterSeq, limit });
   json(res, 200, { entries, count: entries.length });
+}
+
+async function handleTrackSave(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  tracksDir: string,
+  id: string,
+): Promise<void> {
+  const raw = await readBody(req);
+  let body: unknown;
+  try { body = JSON.parse(raw); } catch { json(res, 400, { error: "invalid json" }); return; }
+
+  const track = body as any;
+  if (!track.name || !track.track || !Array.isArray(track.track)) {
+    json(res, 400, { error: "track must have name and track array" });
+    return;
+  }
+
+  const filePath = path.join(tracksDir, `${id}.json`);
+  fs.writeFileSync(filePath, JSON.stringify(track, null, 2) + "\n");
+  json(res, 200, { ok: true, id });
 }
 
 function handleWalRange(url: URL, res: http.ServerResponse, wal: WalEngine): void {

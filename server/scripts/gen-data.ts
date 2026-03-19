@@ -3,12 +3,8 @@
  *
  * Usage: tsx scripts/gen-data.ts [--url http://localhost:4400] [--hz 25] [--duration 0] [--track sonoma]
  *
- * Simulates a car driving laps around a track with:
- *   - GPS position (lat/lon following the track polyline)
- *   - GPS speed, heading
- *   - G-forces (lateral + longitudinal)
- *   - Throttle position, coolant temp, manifold pressure (ECU channels)
- *   - Speed (ECU)
+ * Speed at every track position is computed from local curvature with
+ * forward/backward acceleration passes — no segment classification needed.
  */
 
 import { readFileSync } from "node:fs";
@@ -26,14 +22,13 @@ function arg(name: string, fallback: string): string {
 
 const BASE_URL = arg("url", "http://localhost:4400");
 const HZ = parseInt(arg("hz", "25"), 10);
-const DURATION_S = parseInt(arg("duration", "0"), 10); // 0 = run forever
+const DURATION_S = parseInt(arg("duration", "0"), 10);
 const TRACK_ID = arg("track", "sonoma");
 
-// Load track from shared JSON
 const trackJson = JSON.parse(readFileSync(resolve(TRACKS_DIR, `${TRACK_ID}.json`), "utf-8"));
 const TRACK_POINTS: [number, number][] = trackJson.track;
 
-// precompute cumulative distances along track
+// cumulative distances (meters)
 const segDists: number[] = [0];
 let totalDist = 0;
 for (let i = 1; i < TRACK_POINTS.length; i++) {
@@ -45,215 +40,213 @@ for (let i = 1; i < TRACK_POINTS.length; i++) {
   segDists.push(totalDist);
 }
 
-function getTrackPos(dist: number): { lat: number; lon: number; heading: number } {
-  const d = ((dist % totalDist) + totalDist) % totalDist;
+const N = TRACK_POINTS.length;
+function clamp(v: number, lo: number, hi: number): number { return Math.max(lo, Math.min(hi, v)); }
+function jitter(v: number, amount: number): number { return v + (Math.random() - 0.5) * 2 * amount; }
+function lerp(a: number, b: number, t: number): number { return a + (b - a) * t; }
+
+// ── GPS helpers ──
+const LOOKAHEAD = 15;
+
+function getPosAtDist(d: number): [number, number] {
+  const wrapped = ((d % totalDist) + totalDist) % totalDist;
   for (let i = 1; i < segDists.length; i++) {
+    if (wrapped <= segDists[i]) {
+      const segLen = segDists[i] - segDists[i - 1];
+      const frac = segLen > 0 ? (wrapped - segDists[i - 1]) / segLen : 0;
+      const [lat1, lon1] = TRACK_POINTS[i - 1];
+      const [lat2, lon2] = TRACK_POINTS[i];
+      return [lat1 + (lat2 - lat1) * frac, lon1 + (lon2 - lon1) * frac];
+    }
+  }
+  return TRACK_POINTS[0];
+}
+
+function getTrackPos(dist: number): { lat: number; lon: number; heading: number } {
+  const [lat, lon] = getPosAtDist(dist);
+  const [aLat, aLon] = getPosAtDist(dist + LOOKAHEAD);
+  const dlat = (aLat - lat) * 111320;
+  const dlon = (aLon - lon) * 111320 * Math.cos((lat * Math.PI) / 180);
+  const heading = ((Math.atan2(dlon, dlat) * 180 / Math.PI) % 360 + 360) % 360;
+  return { lat, lon, heading };
+}
+
+// ── Build per-point speed + curvature profile ──
+const MU = 0.55;     // tire grip
+const G = 9.81;
+const TOP_SPEED = 145;  // km/h (~90 mph)
+const MIN_SPEED = 30;   // km/h (~19 mph)
+const MAX_ACCEL = 25;   // km/h/s (accelerating)
+const MAX_DECEL = 45;   // km/h/s (braking)
+
+// 1. Per-point heading + signed curvature
+const headings: number[] = [];
+for (let i = 0; i < N - 1; i++) {
+  const [lat1, lon1] = TRACK_POINTS[i];
+  const [lat2, lon2] = TRACK_POINTS[i + 1];
+  const dlat = (lat2 - lat1) * 111320;
+  const dlon = (lon2 - lon1) * 111320 * Math.cos((lat1 * Math.PI) / 180);
+  headings.push(Math.atan2(dlon, dlat));
+}
+headings.push(headings[headings.length - 1]);
+
+const rawCurvatures: number[] = [0];
+for (let i = 1; i < N; i++) {
+  let dh = headings[i] - headings[i - 1];
+  while (dh > Math.PI) dh -= 2 * Math.PI;
+  while (dh < -Math.PI) dh += 2 * Math.PI;
+  const d = segDists[i] - segDists[i - 1];
+  rawCurvatures.push(d > 0 ? dh / d : 0);
+}
+
+// Smooth curvature by geographic distance (±15m radius)
+const SMOOTH_RADIUS = 15; // meters
+const curvature: number[] = [];
+for (let i = 0; i < N; i++) {
+  let sum = 0, cnt = 0;
+  const dc = segDists[i];
+  for (let j = i; j >= 0 && dc - segDists[j] <= SMOOTH_RADIUS; j--) { sum += rawCurvatures[j]; cnt++; }
+  for (let j = i + 1; j < N && segDists[j] - dc <= SMOOTH_RADIUS; j++) { sum += rawCurvatures[j]; cnt++; }
+  curvature.push(cnt > 0 ? sum / cnt : 0);
+}
+
+// 2. Max speed from local curvature
+const maxSpeed: number[] = [];
+for (let i = 0; i < N; i++) {
+  const absCurv = Math.abs(curvature[i]);
+  if (absCurv < 0.0005) {
+    maxSpeed.push(TOP_SPEED);
+  } else {
+    const radius = 1 / absCurv;
+    const vMs = Math.sqrt(MU * G * Math.min(radius, 500));
+    maxSpeed.push(clamp(vMs * 3.6, MIN_SPEED, TOP_SPEED));
+  }
+}
+
+// 3. Forward pass: limit how fast speed can increase
+const speedProfile: number[] = [...maxSpeed];
+for (let i = 1; i < N; i++) {
+  const d = segDists[i] - segDists[i - 1];
+  const avgSpd = Math.max((speedProfile[i - 1] + speedProfile[i]) / 2, 10);
+  const dt = d / (avgSpd / 3.6);
+  speedProfile[i] = Math.min(speedProfile[i], speedProfile[i - 1] + MAX_ACCEL * dt);
+}
+
+// 4. Backward pass: limit how fast speed can decrease (braking)
+for (let i = N - 2; i >= 0; i--) {
+  const d = segDists[i + 1] - segDists[i];
+  const avgSpd = Math.max((speedProfile[i] + speedProfile[i + 1]) / 2, 10);
+  const dt = d / (avgSpd / 3.6);
+  speedProfile[i] = Math.min(speedProfile[i], speedProfile[i + 1] + MAX_DECEL * dt);
+}
+
+// 5. Bake in ±8% random variance per point for natural variation
+for (let i = 0; i < N; i++) {
+  speedProfile[i] = clamp(speedProfile[i] * (0.92 + Math.random() * 0.16), MIN_SPEED, TOP_SPEED);
+}
+
+// Also do a wrap-around pass (end→start and start→end for the loop)
+{
+  const d = segDists[1] - segDists[0]; // approximate
+  const avgSpd = Math.max((speedProfile[N - 1] + speedProfile[0]) / 2, 10);
+  const dt = d / (avgSpd / 3.6);
+  speedProfile[0] = Math.min(speedProfile[0], speedProfile[N - 1] + MAX_DECEL * dt);
+  speedProfile[N - 1] = Math.min(speedProfile[N - 1], speedProfile[0] + MAX_DECEL * dt);
+}
+
+// 5. Build a lookup: given distance → target speed + curvature
+function getTargetAtDist(dist: number): { targetSpeed: number; curv: number } {
+  const d = ((dist % totalDist) + totalDist) % totalDist;
+  for (let i = 1; i < N; i++) {
     if (d <= segDists[i]) {
       const segLen = segDists[i] - segDists[i - 1];
       const frac = segLen > 0 ? (d - segDists[i - 1]) / segLen : 0;
-      const [lat1, lon1] = TRACK_POINTS[i - 1];
-      const [lat2, lon2] = TRACK_POINTS[i];
-      const lat = lat1 + (lat2 - lat1) * frac;
-      const lon = lon1 + (lon2 - lon1) * frac;
-      const heading = (Math.atan2(lon2 - lon1, lat2 - lat1) * 180) / Math.PI;
-      return { lat, lon, heading: ((heading % 360) + 360) % 360 };
+      const spd = speedProfile[i - 1] + (speedProfile[i] - speedProfile[i - 1]) * frac;
+      const crv = curvature[i - 1] + (curvature[i] - curvature[i - 1]) * frac;
+      return { targetSpeed: spd, curv: crv };
     }
   }
-  return { lat: TRACK_POINTS[0][0], lon: TRACK_POINTS[0][1], heading: 0 };
+  return { targetSpeed: speedProfile[0], curv: curvature[0] };
 }
 
-// track segment types based on curvature
-type SegmentType = "straight" | "braking" | "corner" | "corner_exit";
-interface Segment {
-  type: SegmentType;
-  duration: number;
-  targetSpeed?: number;   // km/h target for corners/braking
-  lateralG?: number;      // lateral g-force in corners
-  topSpeed?: number;      // km/h ceiling for straights
-}
+// Log speed profile summary
+const minSpd = Math.min(...speedProfile);
+const maxSpd = Math.max(...speedProfile);
+console.log(`track: ${TRACK_ID} (${N} pts, ${Math.round(totalDist)}m)`);
+console.log(`speed profile: ${Math.round(minSpd)}-${Math.round(maxSpd)} km/h (${Math.round(minSpd * 0.621)}-${Math.round(maxSpd * 0.621)} mph)`);
 
-// Model Sonoma Raceway lap: main straight → T1 → T2 → esses → T4 → T5(hairpin)
-// → T6(fast) → carousel → T8/9(downhill tight) → T10 → chute → T11 → main straight
-const TRACK_SEGMENTS: Segment[] = [
-  // main straight (S/F → T1)
-  { type: "straight", duration: 7, topSpeed: 190 },
-  // T1 — medium right, brake from 190 to 110
-  { type: "braking", duration: 1.5, targetSpeed: 110 },
-  { type: "corner", duration: 2.5, targetSpeed: 100, lateralG: 0.7 },
-  { type: "corner_exit", duration: 1.5, topSpeed: 130 },
-  // T2 — hard left downhill
-  { type: "braking", duration: 1.2, targetSpeed: 75 },
-  { type: "corner", duration: 2, targetSpeed: 70, lateralG: 0.85 },
-  { type: "corner_exit", duration: 1.2, topSpeed: 110 },
-  // T3/T3a — uphill esses (fast, flowing)
-  { type: "corner", duration: 1.5, targetSpeed: 105, lateralG: 0.5 },
-  { type: "corner", duration: 1.5, targetSpeed: 100, lateralG: -0.55 },
-  // short straight to T4
-  { type: "straight", duration: 2, topSpeed: 130 },
-  // T4 — medium right
-  { type: "braking", duration: 1, targetSpeed: 85 },
-  { type: "corner", duration: 2, targetSpeed: 80, lateralG: 0.7 },
-  { type: "corner_exit", duration: 1, topSpeed: 100 },
-  // T5 — hairpin left (slowest corner)
-  { type: "braking", duration: 1.5, targetSpeed: 50 },
-  { type: "corner", duration: 2.5, targetSpeed: 45, lateralG: -0.9 },
-  { type: "corner_exit", duration: 2, topSpeed: 120 },
-  // T6 — fast sweeping right
-  { type: "corner", duration: 2, targetSpeed: 120, lateralG: 0.6 },
-  // T7/T7a — carousel (sustained medium speed)
-  { type: "braking", duration: 0.8, targetSpeed: 80 },
-  { type: "corner", duration: 3.5, targetSpeed: 75, lateralG: 0.75 },
-  { type: "corner_exit", duration: 1, topSpeed: 95 },
-  // T8/T8a/T9 — tight downhill section
-  { type: "braking", duration: 1.2, targetSpeed: 55 },
-  { type: "corner", duration: 1.5, targetSpeed: 55, lateralG: -0.8 },
-  { type: "corner", duration: 1.5, targetSpeed: 60, lateralG: 0.7 },
-  { type: "corner_exit", duration: 1, topSpeed: 90 },
-  // T10 — hard right onto the chute
-  { type: "braking", duration: 1, targetSpeed: 55 },
-  { type: "corner", duration: 1.5, targetSpeed: 50, lateralG: 0.85 },
-  { type: "corner_exit", duration: 1.5, topSpeed: 110 },
-  // short chute
-  { type: "straight", duration: 2, topSpeed: 130 },
-  // T11 — left onto main straight
-  { type: "braking", duration: 1, targetSpeed: 90 },
-  { type: "corner", duration: 1.5, targetSpeed: 85, lateralG: -0.65 },
-  { type: "corner_exit", duration: 2, topSpeed: 160 },
-];
+// ── Simulation state ──
+let speed = 80;
+let throttlePos = 0;
+let gForceX = 0;
+let gForceY = 0;
+let coolantTemp = 85;
+let mapKpa = 40;
+let trackDist = 0;
 
-const LAP_DURATION = TRACK_SEGMENTS.reduce((s, seg) => s + seg.duration, 0);
+function step(dt: number): void {
+  const { targetSpeed, curv } = getTargetAtDist(trackDist);
+  const absCurv = Math.abs(curv);
+  const isCorner = absCurv > 0.001;
+  const isBraking = targetSpeed < speed - 2;
+  const isAccel = targetSpeed > speed + 2;
 
-function getSegment(t: number): { seg: Segment; progress: number; prevLateralG: number } {
-  const lapT = t % LAP_DURATION;
-  let elapsed = 0;
-  for (let i = 0; i < TRACK_SEGMENTS.length; i++) {
-    const seg = TRACK_SEGMENTS[i];
-    if (lapT < elapsed + seg.duration) {
-      // find the most recent lateralG from a preceding corner segment
-      let prevLateralG = 0;
-      for (let j = i - 1; j >= 0; j--) {
-        if (TRACK_SEGMENTS[j].lateralG != null) {
-          prevLateralG = TRACK_SEGMENTS[j].lateralG!;
-          break;
-        }
-      }
-      return { seg, progress: (lapT - elapsed) / seg.duration, prevLateralG };
-    }
-    elapsed += seg.duration;
-  }
-  return { seg: TRACK_SEGMENTS[TRACK_SEGMENTS.length - 1], progress: 1, prevLateralG: 0 };
-}
-
-function clamp(v: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, v));
-}
-
-function jitter(v: number, amount: number): number {
-  return v + (Math.random() - 0.5) * 2 * amount;
-}
-
-function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
-}
-
-// state
-let speed = 80;       // km/h
-let throttlePos = 0;  // 0-100%
-let gForceX = 0;      // longitudinal (braking/accel)
-let gForceY = 0;      // lateral
-let coolantTemp = 85;  // °C — warms up then stabilizes
-let mapKpa = 40;       // manifold pressure kPa
-let trackDist = 0;     // cumulative distance along track
-
-function step(dt: number, seg: Segment, progress: number, prevLateralG: number): void {
-  const target = seg.targetSpeed ?? 100;
-  const top = seg.topSpeed ?? 200;
-  const latG = seg.lateralG ?? prevLateralG;
-
-  switch (seg.type) {
-    case "straight": {
-      // progressive throttle, accelerate toward top speed
-      const accelRate = speed < 100 ? 50 : 30; // faster accel at low speed
-      throttlePos = lerp(throttlePos, clamp(85 + Math.random() * 15, 85, 100), dt * 5);
-      speed = lerp(speed, clamp(speed + accelRate * dt, speed, top), dt * 2.5);
-      gForceX = lerp(gForceX, jitter(0.2 + (top - speed) / top * 0.3, 0.04), dt * 5);
-      gForceY = lerp(gForceY, jitter(0, 0.03), dt * 6);
-      mapKpa = lerp(mapKpa, clamp(80 + throttlePos * 0.2, 70, 101), dt * 3);
-      break;
-    }
-
-    case "braking": {
-      // hard braking — throttle off, decelerate to target
-      throttlePos = lerp(throttlePos, 0, dt * 15);
-      const brakingForce = (speed - target) / (seg.duration * 0.7); // decel rate
-      speed = lerp(speed, target, dt * 4);
-      const brakeG = -clamp(brakingForce / 30, 0.3, 1.2);
-      gForceX = lerp(gForceX, jitter(brakeG, 0.05), dt * 8);
-      gForceY = lerp(gForceY, jitter(0, 0.08), dt * 4);
-      mapKpa = lerp(mapKpa, 22, dt * 6);
-      break;
-    }
-
-    case "corner": {
-      // maintain corner speed, partial throttle
-      const tpsTarget = 15 + (target / 200) * 40 + progress * 15;
-      throttlePos = lerp(throttlePos, clamp(tpsTarget, 10, 65), dt * 5);
-      speed = lerp(speed, target + progress * 10, dt * 4);
-      gForceX = lerp(gForceX, jitter(0.05, 0.04), dt * 5);
-      gForceY = lerp(gForceY, jitter(latG, 0.06), dt * 5);
-      mapKpa = lerp(mapKpa, 30 + throttlePos * 0.35, dt * 3);
-      break;
-    }
-
-    case "corner_exit": {
-      // progressive throttle application, unwinding steering
-      const exitTps = 40 + progress * 60;
-      throttlePos = lerp(throttlePos, clamp(exitTps, 40, 100), dt * 4);
-      speed = lerp(speed, clamp(speed + 35 * dt, speed, top), dt * 2.5);
-      gForceX = lerp(gForceX, jitter(0.3 + progress * 0.2, 0.04), dt * 5);
-      // lateral g unwinds through exit
-      const exitLatG = latG * (1 - progress * 0.8);
-      gForceY = lerp(gForceY, jitter(exitLatG, 0.04), dt * 5);
-      mapKpa = lerp(mapKpa, 45 + throttlePos * 0.45, dt * 3);
-      break;
-    }
+  if (isBraking) {
+    // Brake toward target
+    const decelRate = clamp((speed - targetSpeed) * 3, 10, MAX_DECEL);
+    speed = Math.max(speed - decelRate * dt, targetSpeed);
+    throttlePos = lerp(throttlePos, 0, dt * 12);
+    gForceX = lerp(gForceX, jitter(clamp(decelRate / 36, 0.2, 1.0), 0.05), dt * 8);
+    mapKpa = lerp(mapKpa, 22, dt * 6);
+  } else if (isAccel && !isCorner) {
+    // Accelerate hard on straights
+    const accelRate = MAX_ACCEL;
+    speed = Math.min(speed + accelRate * dt, targetSpeed);
+    throttlePos = lerp(throttlePos, clamp(85 + Math.random() * 15, 85, 100), dt * 5);
+    gForceX = lerp(gForceX, jitter(-clamp(accelRate / 36, 0.05, 0.35), 0.04), dt * 5);
+    mapKpa = lerp(mapKpa, clamp(80 + throttlePos * 0.2, 70, 101), dt * 3);
+  } else {
+    // Cornering or maintaining speed
+    speed = lerp(speed, targetSpeed, dt * 5);
+    const tpsTarget = 15 + (targetSpeed / 200) * 50;
+    throttlePos = lerp(throttlePos, clamp(tpsTarget, 10, 70), dt * 5);
+    gForceX = lerp(gForceX, jitter(0, 0.04), dt * 5);
+    mapKpa = lerp(mapKpa, 30 + throttlePos * 0.4, dt * 3);
   }
 
-  // coolant slowly warms to operating temp then holds
+  // Lateral G from curvature + current speed
+  if (isCorner) {
+    const radius = 1 / absCurv;
+    const vMs = speed / 3.6;
+    const latG = clamp((vMs * vMs) / (radius * G), 0, 0.85);
+    const signedG = curv >= 0 ? -latG : latG;
+    gForceY = lerp(gForceY, jitter(signedG, 0.05), dt * 6);
+  } else {
+    gForceY = lerp(gForceY, jitter(0, 0.02), dt * 6);
+  }
+
   coolantTemp = lerp(coolantTemp, 92, dt * 0.05);
   coolantTemp = clamp(jitter(coolantTemp, 0.2), 60, 110);
-
-  // clamp
+  speed = clamp(speed, MIN_SPEED, TOP_SPEED);
   throttlePos = clamp(throttlePos, 0, 100);
-  speed = clamp(speed, 20, 220);
   gForceX = clamp(gForceX, -1.5, 1.5);
   gForceY = clamp(gForceY, -1.5, 1.5);
   mapKpa = clamp(mapKpa, 20, 101);
 
-  // advance along track
-  trackDist += (speed / 3.6) * dt; // m/s * dt
+  trackDist += (speed / 3.6) * dt;
 }
 
-// Reverse conversions: converted values → raw voltage (matching serial-bridge.ts)
-// TPS: V = throttle_pct * 4.0 / 100 + 0.5
-function tpsToVoltage(pct: number): number {
-  return pct * 4.0 / 100 + 0.5;
-}
+// ── Voltage conversions ──
+function tpsToVoltage(pct: number): number { return pct * 4.0 / 100 + 0.5; }
+function mapToVoltage(kpa: number): number { return (kpa - 20) / 32.4 + 0.5; }
 
-// MAP: V = (kPa - 20) / 32.4 + 0.5
-function mapToVoltage(kpa: number): number {
-  return (kpa - 20) / 32.4 + 0.5;
-}
-
-// ECT: temp → resistance (log interp on table), then V = 5 * R / (R_pullup + R)
-const ECT_PULLUP = 6.65; // kΩ, matches serial-bridge.ts
+const ECT_PULLUP = 6.65;
 const ECT_TABLE: [number, number][] = [
   [12.0, -20], [5.0, 0], [2.0, 20], [1.2, 40],
   [0.7, 60], [0.4, 80], [0.2, 100], [0.1, 120],
 ];
 
 function ectToVoltage(tempC: number): number {
-  // temp → resistance via log interpolation
   let rKohm: number;
   if (tempC <= ECT_TABLE[0][1]) rKohm = ECT_TABLE[0][0];
   else if (tempC >= ECT_TABLE[ECT_TABLE.length - 1][1]) rKohm = ECT_TABLE[ECT_TABLE.length - 1][0];
@@ -272,8 +265,7 @@ function ectToVoltage(tempC: number): number {
   return 5 * rKohm / (ECT_PULLUP + rKohm);
 }
 
-// ADC noise: Mega 10-bit ADC, LSB ≈ 4.9mV
-const ADC_NOISE = 0.05; // ±50mV
+const ADC_NOISE = 0.05;
 
 async function send(batch: unknown[]): Promise<void> {
   for (let attempt = 0; ; attempt++) {
@@ -283,9 +275,7 @@ async function send(batch: unknown[]): Promise<void> {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(batch),
       });
-      if (!res.ok) {
-        throw new Error(`ingest failed: ${res.status} ${await res.text()}`);
-      }
+      if (!res.ok) throw new Error(`ingest failed: ${res.status} ${await res.text()}`);
       return;
     } catch (err: any) {
       if (err?.cause?.code === "ECONNREFUSED" && attempt < 30) {
@@ -300,43 +290,34 @@ async function send(batch: unknown[]): Promise<void> {
   }
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
+function sleep(ms: number): Promise<void> { return new Promise((r) => setTimeout(r, ms)); }
 
 async function main(): Promise<void> {
   const dt = 1 / HZ;
   const tickMs = 1000 / HZ;
-  let t = 0;
   let totalSent = 0;
 
-  console.log(`streaming live at ${HZ}Hz ${DURATION_S ? `for ${DURATION_S}s` : "continuously"} → ${BASE_URL}  (ctrl-c to stop)`);
+  console.log(`streaming at ${HZ}Hz ${DURATION_S ? `for ${DURATION_S}s` : "continuously"} → ${BASE_URL}  (ctrl-c to stop)`);
 
   const startReal = performance.now();
   const maxTicks = DURATION_S ? HZ * DURATION_S : Infinity;
 
   for (let i = 0; i < maxTicks; i++) {
-    const { seg, progress, prevLateralG } = getSegment(t);
-    step(dt, seg, progress, prevLateralG);
+    step(dt);
     const ts = Date.now();
-
     const pos = getTrackPos(trackDist);
 
     const batch = [
-      // GPS (from RaceBox)
       { channel: "gps_lat", value: pos.lat, ts },
       { channel: "gps_lon", value: pos.lon, ts },
       { channel: "gps_speed", value: Math.round(jitter(speed, 2) * 10) / 10, ts },
       { channel: "gps_heading", value: Math.round(pos.heading * 10) / 10, ts },
-      // G-forces (from RaceBox)
       { channel: "g_force_x", value: Math.round(jitter(gForceX, 0.06) * 1000) / 1000, ts },
       { channel: "g_force_y", value: Math.round(jitter(gForceY, 0.06) * 1000) / 1000, ts },
-      // ECU (from serial bridge)
       { channel: "speed", value: Math.round(jitter(speed, 3) * 10) / 10, ts },
       { channel: "throttle_pos", value: Math.round(jitter(throttlePos, 2) * 10) / 10, ts },
       { channel: "coolant_temp", value: Math.round(jitter(coolantTemp, 1.5) * 10) / 10, ts },
       { channel: "manifold_pressure", value: Math.round(jitter(mapKpa, 2) * 10) / 10, ts },
-      // Raw voltages (with ADC noise)
       { channel: "tps_voltage", value: Math.round(jitter(tpsToVoltage(throttlePos), ADC_NOISE) * 1000) / 1000, ts },
       { channel: "ect_voltage", value: Math.round(jitter(ectToVoltage(coolantTemp), ADC_NOISE) * 1000) / 1000, ts },
       { channel: "map_voltage", value: Math.round(jitter(mapToVoltage(mapKpa), ADC_NOISE) * 1000) / 1000, ts },
@@ -344,9 +325,7 @@ async function main(): Promise<void> {
 
     await send(batch);
     totalSent += batch.length;
-    t += dt;
 
-    // sleep to maintain real-time pacing
     const expected = (i + 1) * tickMs;
     const elapsed = performance.now() - startReal;
     const drift = expected - elapsed;
@@ -356,7 +335,4 @@ async function main(): Promise<void> {
   console.log(`done — ${totalSent} entries streamed`);
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+main().catch((err) => { console.error(err); process.exit(1); });

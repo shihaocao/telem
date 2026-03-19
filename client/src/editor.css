@@ -46,6 +46,8 @@ body::after {
   border-bottom: 1px solid var(--border-bright);
   flex-shrink: 0;
   position: relative;
+  z-index: 1000;
+  overflow: visible;
 }
 
 #status-bar::before {
@@ -282,6 +284,34 @@ body::after {
 #map-container {
   flex: 1;
   min-width: 0;
+  position: relative;
+}
+
+.sat-toggle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 900;
+  background: transparent;
+  border: 1px solid var(--border-bright);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.sat-toggle:hover {
+  border-color: var(--accent-dim);
+  color: var(--text-bright);
+}
+
+.sat-toggle.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }
 
 .leaflet-container {
