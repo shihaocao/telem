@@ -155,10 +155,54 @@ body::after {
   background: var(--panel-bg);
   border-right: 1px solid var(--border);
   padding: 12px;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+#review-sidebar .sidebar-section {
+  overflow-y: auto;
+}
+
+#review-sidebar-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+#review-status {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+}
+
+#review-status.loading {
+  color: var(--accent);
+}
+
+#review-status.error {
+  color: var(--red);
+}
+
+.review-sync-btn {
+  background: transparent;
+  border: 1px solid var(--border-bright);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.review-sync-btn:hover {
+  border-color: var(--accent-dim);
+  color: var(--text-bright);
 }
 
 .sidebar-section { display: flex; flex-direction: column; gap: 6px; }

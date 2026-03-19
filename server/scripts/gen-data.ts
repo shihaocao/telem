@@ -222,7 +222,7 @@ function step(dt: number): void {
     const radius = 1 / absCurv;
     const vMs = speed / 3.6;
     const latG = clamp((vMs * vMs) / (radius * G), 0, 0.85);
-    const signedG = curv >= 0 ? -latG : latG;
+    const signedG = curv >= 0 ? latG : -latG;
     gForceY = lerp(gForceY, jitter(signedG, 0.05), dt * 6);
   } else {
     gForceY = lerp(gForceY, jitter(0, 0.02), dt * 6);

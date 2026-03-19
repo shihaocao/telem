@@ -159,7 +159,7 @@ function drawGCircle(gx: number, gy: number) {
   const cx = gW / 2, cy = gH / 2;
   const radius = Math.min(cx, cy) - 20;
   const scale = radius / MAX_G;
-  const latG = gy;  // lateral = x axis
+  const latG = -gy;  // lateral = x axis (negate so right turn = right on display)
   const lonG = -gx; // braking(+) = up
 
   // rings
@@ -353,16 +353,86 @@ function formatDate(epoch: number): string {
   return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-async function apiFetch(path: string, method = "GET", body?: unknown): Promise<any> {
+// ── LocalStorage cache layer ──
+// Always serves from cache first. SYNC button fetches fresh from server.
+const CACHE_PREFIX = "telem_review_";
+
+function cacheSet(key: string, data: unknown): void {
+  try { localStorage.setItem(CACHE_PREFIX + key, JSON.stringify(data)); } catch {}
+}
+
+function cacheGet<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(CACHE_PREFIX + key);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+const statusEl = document.getElementById("review-status")!;
+
+function setStatus(text: string, cls: "" | "loading" | "error" = "") {
+  statusEl.textContent = text;
+  statusEl.className = cls ? `${cls}` : "";
+  statusEl.id = "review-status";
+}
+
+async function apiFetch(path: string, method = "GET", body?: unknown, skipCache = false): Promise<any> {
+  if (method === "GET" && !skipCache) {
+    const cached = cacheGet(path);
+    if (cached) return cached;
+  }
+
+  setStatus("LOADING...", "loading");
   const opts: RequestInit = { method, headers: { "Content-Type": "application/json" } };
   if (body !== undefined) opts.body = JSON.stringify(body);
-  const res = await fetch(`${SERVER_URL}${path}`, opts);
-  return res.json();
+  try {
+    const res = await fetch(`${SERVER_URL}${path}`, opts);
+    const data = await res.json();
+    if (method === "GET") cacheSet(path, data);
+    setStatus("CACHED");
+    return data;
+  } catch {
+    if (method === "GET") {
+      const cached = cacheGet(path);
+      if (cached) { setStatus("OFFLINE (CACHED)"); return cached; }
+    }
+    setStatus("OFFLINE", "error");
+    throw new Error(`Server unreachable and no cached data for ${path}`);
+  }
 }
+
+async function syncFromServer() {
+  const btn = document.getElementById("btn-sync")!;
+  btn.textContent = "SYNCING...";
+  setStatus("SYNCING...", "loading");
+  try {
+    sessions = await apiFetch(`/sessions?track=${trackId}`, "GET", undefined, true);
+    renderSessionList();
+    if (session) {
+      session = await apiFetch(`/sessions/${session.id}`, "GET", undefined, true);
+      renderLapList();
+      updateMeta();
+      if (selectedLapIdx >= 0 && session?.laps[selectedLapIdx]) {
+        await selectLap(selectedLapIdx, true);
+      }
+    }
+    setStatus("SYNCED");
+    btn.textContent = "SYNC";
+  } catch {
+    setStatus("OFFLINE", "error");
+    btn.textContent = "SYNC";
+  }
+}
+
+document.getElementById("btn-sync")!.addEventListener("click", syncFromServer);
 
 // ── Sessions ──
 async function loadSessions() {
-  sessions = await apiFetch(`/sessions?track=${trackId}`);
+  try {
+    sessions = await apiFetch(`/sessions?track=${trackId}`);
+  } catch {
+    sessions = [];
+  }
   renderSessionList();
 }
 
@@ -388,7 +458,14 @@ function renderSessionList() {
       e.stopPropagation();
       const id = (btn as HTMLElement).dataset.id!;
       if (!confirm("Delete this session?")) return;
-      await apiFetch(`/sessions/${id}`, "DELETE");
+      try { await apiFetch(`/sessions/${id}`, "DELETE"); } catch {}
+      // Clear cached data for this session
+      try {
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const key = localStorage.key(i);
+          if (key?.startsWith(CACHE_PREFIX) && key.includes(id)) localStorage.removeItem(key);
+        }
+      } catch {}
       if (session?.id === id) { session = null; selectedLapIdx = -1; clearLapView(); updateMeta(); }
       await loadSessions();
     });
@@ -474,37 +551,43 @@ function renderLapList() {
   }
 }
 
-async function selectLap(idx: number) {
+async function selectLap(idx: number, forceRefresh = false) {
   if (!session || idx < 0 || idx >= session.laps.length) return;
   selectedLapIdx = idx;
   renderLapList();
 
   const lap = session.laps[idx];
   const channels = "gps_lat,gps_lon,gps_speed,gps_heading,throttle_pos,g_force_x,g_force_y,rpm,gear,brake,coolant_temp,manifold_pressure";
-  const data = await apiFetch(`/wal/range?start_seq=${lap.startSeq}&end_seq=${lap.endSeq}&channels=${channels}`);
+  const data = await apiFetch(`/wal/range?start_seq=${lap.startSeq}&end_seq=${lap.endSeq}&channels=${channels}`, "GET", undefined, forceRefresh);
   lapEntries = data.entries;
 
-  const byTs = new Map<number, Record<string, number>>();
-  for (const e of lapEntries) {
-    let rec = byTs.get(e.ts);
-    if (!rec) { rec = {}; byTs.set(e.ts, rec); }
-    rec[e.channel] = e.value;
-  }
+  // Sort all entries by timestamp, then build per-GPS-tick arrays
+  // carrying forward the last known value for non-GPS channels
+  lapEntries.sort((a, b) => a.ts - b.ts);
 
+  const latest: Record<string, number> = {};
   lapCoords = []; lapSpeeds = []; lapThrottles = []; lapGx = []; lapGy = [];
   lapRpms = []; lapGears = []; lapBrakes = []; lapTimestamps = [];
-  const sortedTs = Array.from(byTs.keys()).sort((a, b) => a - b);
-  for (const ts of sortedTs) {
-    const rec = byTs.get(ts)!;
-    if (rec.gps_lat !== undefined && rec.gps_lon !== undefined) {
-      lapCoords.push([rec.gps_lat, rec.gps_lon]);
-      lapSpeeds.push(rec.gps_speed ?? 0);
-      lapThrottles.push(rec.throttle_pos ?? 0);
-      lapGx.push(rec.g_force_x ?? 0);
-      lapGy.push(rec.g_force_y ?? 0);
-      lapRpms.push(rec.rpm ?? 0);
-      lapGears.push(rec.gear ?? 0);
-      lapBrakes.push(rec.brake ?? 0);
+
+  // Group entries by timestamp
+  let i = 0;
+  while (i < lapEntries.length) {
+    const ts = lapEntries[i].ts;
+    // Absorb all entries at this timestamp
+    while (i < lapEntries.length && lapEntries[i].ts === ts) {
+      latest[lapEntries[i].channel] = lapEntries[i].value;
+      i++;
+    }
+    // Only emit a data point when we have a GPS fix
+    if (latest.gps_lat !== undefined && latest.gps_lon !== undefined) {
+      lapCoords.push([latest.gps_lat, latest.gps_lon]);
+      lapSpeeds.push(latest.gps_speed ?? 0);
+      lapThrottles.push(latest.throttle_pos ?? 0);
+      lapGx.push(latest.g_force_x ?? 0);
+      lapGy.push(latest.g_force_y ?? 0);
+      lapRpms.push(latest.rpm ?? 0);
+      lapGears.push(latest.gear ?? 0);
+      lapBrakes.push(latest.brake ?? 0);
       lapTimestamps.push(ts);
     }
   }

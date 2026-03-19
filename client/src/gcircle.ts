@@ -58,7 +58,7 @@ export function createGCircle(
     const gx = len > 0 ? gxBuf!.values[len - 1] : 0;
     const gy = len > 0 ? gyBuf!.values[len - 1] : 0;
 
-    const rawX = gy;     // lateral = x-axis
+    const rawX = -gy;    // lateral = x-axis (negate so right turn = right on display)
     const rawY = -gx;    // braking(+) = up
 
     if (!emaInit) {
