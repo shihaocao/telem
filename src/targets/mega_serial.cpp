@@ -32,11 +32,11 @@ constexpr float VDIV_RATIO = 4.3f;
 constexpr int PIN_TACH = 18;
 constexpr int PIN_VSS  = 19;
 
-// Tach: 2 pulses per revolution (F22A)
-constexpr float TACH_PULSES_PER_REV = 2.0f;
+// Tach: measured 60 edges @ 800rpm, 180 edges @ 2400rpm → 4.5 pulses/rev
+constexpr float TACH_PULSES_PER_REV = 4.5f;
 
 // Ring buffer size for period averaging
-constexpr int RING_N = 10;
+constexpr int RING_N = 30;
 
 // Timeout: if no pulse for this long, signal is considered dead (e.g. engine off)
 constexpr unsigned long SIGNAL_TIMEOUT_US = 500000; // 500ms
