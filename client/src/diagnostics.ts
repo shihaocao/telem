@@ -4,12 +4,12 @@ export interface DiagPanel {
   update: () => void;
 }
 
-const SPARK_POINTS = 100;
+const SPARK_POINTS = 3000; // ~2 min at 25Hz
 
-const RED = "rgb(231, 76, 60)";
-const ORANGE = "rgb(255, 107, 53)";
-const GREEN = "rgb(46, 204, 113)";
-const WHITE = "rgb(255, 255, 255)";
+const RED = "rgb(255, 68, 54)";
+const ORANGE = "rgb(255, 123, 69)";
+const GREEN = "rgb(61, 223, 128)";
+const CYAN = "rgb(0, 212, 170)";
 
 interface DiagCell {
   channel: string;
@@ -23,12 +23,10 @@ interface DiagCell {
   min: number;
   max: number;
   warnAbove?: number;
+  transform?: (v: number) => number;
 }
 
-function drawSparkline(
-  cell: DiagCell,
-  values: number[],
-): void {
+function drawSparkline(cell: DiagCell, values: number[]): void {
   const { canvas, ctx, color, min, max } = cell;
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.clientWidth;
@@ -55,7 +53,6 @@ function drawSparkline(
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  // fill under
   ctx.lineTo(w, h);
   ctx.lineTo(0, h);
   ctx.closePath();
@@ -72,6 +69,7 @@ function createCell(
   min: number,
   max: number,
   warnAbove?: number,
+  transform?: (v: number) => number,
 ): DiagCell {
   const cell = document.createElement("div");
   cell.className = "diag-cell";
@@ -90,19 +88,16 @@ function createCell(
   const canvas = cell.querySelector(".diag-cell-spark") as HTMLCanvasElement;
 
   return {
-    channel,
-    label,
-    unit,
+    channel, label, unit,
     valueEl: cell.querySelector(".diag-cell-value") as HTMLElement,
     cellEl: cell,
     canvas,
     ctx: canvas.getContext("2d")!,
-    color,
-    min,
-    max,
-    warnAbove,
+    color, min, max, warnAbove, transform,
   };
 }
+
+const toF = (c: number) => c * 9 / 5 + 32;
 
 export function createDiagnostics(
   container: HTMLElement,
@@ -112,9 +107,10 @@ export function createDiagnostics(
   const grid = container.querySelector(".diag-grid") as HTMLElement;
 
   const cells: DiagCell[] = [
-    createCell(grid, "coolant_temp", "冷却 COOLANT", "\u00B0F", RED, 32, 270, 212),
+    createCell(grid, "coolant_temp", "冷却 COOLANT", "\u00B0F", RED, 32, 270, 212, toF),
     createCell(grid, "manifold_pressure", "圧力 MAP", "kPa", ORANGE, 0, 110),
     createCell(grid, "battery_voltage", "電圧 BATTERY", "V", GREEN, 11, 15),
+    createCell(grid, "jetson_temp", "基板 JETSON", "\u00B0C", CYAN, 20, 100, 85),
   ];
 
   function update(): void {
@@ -125,10 +121,9 @@ export function createDiagnostics(
       let smoothed = mgr.getSmoothed(cell.channel) ?? buf.values[buf.values.length - 1];
       let drawValues = buf.values;
 
-      // Convert coolant temp C → F
-      if (cell.channel === "coolant_temp") {
-        smoothed = smoothed * 9 / 5 + 32;
-        drawValues = buf.values.map((v) => v * 9 / 5 + 32);
+      if (cell.transform) {
+        smoothed = cell.transform(smoothed);
+        drawValues = buf.values.map(cell.transform);
       }
 
       cell.valueEl.textContent = cell.channel === "battery_voltage"
@@ -136,7 +131,6 @@ export function createDiagnostics(
         : String(Math.round(smoothed));
       drawSparkline(cell, drawValues);
 
-      // warning state
       if (cell.warnAbove != null) {
         cell.cellEl.classList.toggle("warning", smoothed > cell.warnAbove);
       }

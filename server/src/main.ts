@@ -1,5 +1,6 @@
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { WalEngine } from "./wal.js";
 import { createServer } from "./http.js";
 import { SessionStore } from "./sessions.js";
@@ -47,12 +48,38 @@ async function main(): Promise<void> {
     }
   });
 
+  // Jetson thermal monitoring — ingest system temps every 5s
+  const THERMAL_DIR = "/sys/devices/virtual/thermal";
+  const THERMAL_INTERVAL = 1000;
+
+  function ingestThermals(): void {
+    if (!existsSync(THERMAL_DIR)) return;
+    try {
+      const zones = readdirSync(THERMAL_DIR).filter((d) => d.startsWith("thermal_zone"));
+      const ts = Date.now();
+      let sum = 0, count = 0;
+      for (const zone of zones) {
+        const tempFile = `${THERMAL_DIR}/${zone}/temp`;
+        if (!existsSync(tempFile)) continue;
+        const tempC = parseInt(readFileSync(tempFile, "utf-8").trim(), 10) / 1000;
+        if (!isNaN(tempC)) { sum += tempC; count++; }
+      }
+      if (count > 0) {
+        wal.append("jetson_temp", Math.round((sum / count) * 10) / 10, ts);
+      }
+    } catch {}
+  }
+
+  ingestThermals();
+  const thermalTimer = setInterval(ingestThermals, THERMAL_INTERVAL);
+
   server.listen(PORT, "0.0.0.0", () => {
     console.log(`telemetry server listening on 0.0.0.0:${PORT}`);
   });
 
   const shutdown = (): void => {
     console.log("shutting down...");
+    clearInterval(thermalTimer);
     server.close(() => {
       wal.close();
       console.log("shutdown complete");

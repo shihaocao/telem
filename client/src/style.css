@@ -552,7 +552,7 @@ body::after {
 .diag-grid {
   display: grid;
   grid-template-columns: 1fr;
-  grid-template-rows: 1fr 1fr 1fr;
+  grid-template-rows: repeat(auto-fill, 1fr);
   height: 100%;
   gap: 1px;
   background: var(--border);

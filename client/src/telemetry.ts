@@ -40,6 +40,10 @@ export class TelemetryManager {
     this._dirty = false;
   }
 
+  getChannels(): string[] {
+    return Array.from(this.buffers.keys());
+  }
+
   getBuffer(channel: string): ChannelBuffer | undefined {
     return this.buffers.get(channel);
   }
