@@ -353,19 +353,66 @@ function formatDate(epoch: number): string {
   return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-// ── LocalStorage cache layer ──
-// Always serves from cache first. SYNC button fetches fresh from server.
-const CACHE_PREFIX = "telem_review_";
+// ── IndexedDB cache layer ──
+const DB_NAME = "telem_review";
+const DB_STORE = "cache";
+const DB_VERSION = 1;
 
-function cacheSet(key: string, data: unknown): void {
-  try { localStorage.setItem(CACHE_PREFIX + key, JSON.stringify(data)); } catch {}
+let dbReady: Promise<IDBDatabase>;
+
+function openDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(DB_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
 }
 
-function cacheGet<T>(key: string): T | null {
+dbReady = openDB();
+
+async function cacheSet(key: string, data: unknown): Promise<void> {
   try {
-    const raw = localStorage.getItem(CACHE_PREFIX + key);
-    return raw ? JSON.parse(raw) : null;
+    const db = await dbReady;
+    const tx = db.transaction(DB_STORE, "readwrite");
+    tx.objectStore(DB_STORE).put(data, key);
+  } catch {}
+}
+
+async function cacheGet<T>(key: string): Promise<T | null> {
+  try {
+    const db = await dbReady;
+    return new Promise((resolve) => {
+      const tx = db.transaction(DB_STORE, "readonly");
+      const req = tx.objectStore(DB_STORE).get(key);
+      req.onsuccess = () => resolve(req.result ?? null);
+      req.onerror = () => resolve(null);
+    });
   } catch { return null; }
+}
+
+async function cacheDelete(key: string): Promise<void> {
+  try {
+    const db = await dbReady;
+    const tx = db.transaction(DB_STORE, "readwrite");
+    tx.objectStore(DB_STORE).delete(key);
+  } catch {}
+}
+
+async function cacheClearPrefix(prefix: string): Promise<void> {
+  try {
+    const db = await dbReady;
+    const tx = db.transaction(DB_STORE, "readwrite");
+    const store = tx.objectStore(DB_STORE);
+    const req = store.getAllKeys();
+    req.onsuccess = () => {
+      for (const key of req.result) {
+        if (typeof key === "string" && key.includes(prefix)) store.delete(key);
+      }
+    };
+  } catch {}
 }
 
 const statusEl = document.getElementById("review-status")!;
@@ -376,24 +423,32 @@ function setStatus(text: string, cls: "" | "loading" | "error" = "") {
   statusEl.id = "review-status";
 }
 
-async function apiFetch(path: string, method = "GET", body?: unknown, skipCache = false): Promise<any> {
-  if (method === "GET" && !skipCache) {
-    const cached = cacheGet(path);
-    if (cached) return cached;
+async function apiFetch(path: string, method = "GET", body?: unknown, skipCache = false, cacheKeyOverride?: string): Promise<any> {
+  const key = cacheKeyOverride ?? path;
+  const cached = method === "GET" && !skipCache ? await cacheGet(key) : null;
+
+  if (method === "GET" && cached && !skipCache) {
+    // Return cache immediately, eagerly refetch in background
+    fetchRemote(path, method, body, key).catch(() => {});
+    return cached;
   }
 
+  return fetchRemote(path, method, body, key);
+}
+
+async function fetchRemote(path: string, method: string, body?: unknown, cacheKey?: string): Promise<any> {
   setStatus("LOADING...", "loading");
   const opts: RequestInit = { method, headers: { "Content-Type": "application/json" } };
   if (body !== undefined) opts.body = JSON.stringify(body);
   try {
     const res = await fetch(`${SERVER_URL}${path}`, opts);
     const data = await res.json();
-    if (method === "GET") cacheSet(path, data);
-    setStatus("CACHED");
+    if (method === "GET" && cacheKey) await cacheSet(cacheKey, data);
+    setStatus("SYNCED");
     return data;
   } catch {
-    if (method === "GET") {
-      const cached = cacheGet(path);
+    if (method === "GET" && cacheKey) {
+      const cached = await cacheGet(cacheKey);
       if (cached) { setStatus("OFFLINE (CACHED)"); return cached; }
     }
     setStatus("OFFLINE", "error");
@@ -460,12 +515,7 @@ function renderSessionList() {
       if (!confirm("Delete this session?")) return;
       try { await apiFetch(`/sessions/${id}`, "DELETE"); } catch {}
       // Clear cached data for this session
-      try {
-        for (let i = localStorage.length - 1; i >= 0; i--) {
-          const key = localStorage.key(i);
-          if (key?.startsWith(CACHE_PREFIX) && key.includes(id)) localStorage.removeItem(key);
-        }
-      } catch {}
+      await cacheClearPrefix(id);
       if (session?.id === id) { session = null; selectedLapIdx = -1; clearLapView(); updateMeta(); }
       await loadSessions();
     });
@@ -558,7 +608,9 @@ async function selectLap(idx: number, forceRefresh = false) {
 
   const lap = session.laps[idx];
   const channels = "gps_lat,gps_lon,gps_speed,gps_heading,throttle_pos,g_force_x,g_force_y,rpm,gear,brake,coolant_temp,manifold_pressure";
-  const data = await apiFetch(`/wal/range?start_seq=${lap.startSeq}&end_seq=${lap.endSeq}&channels=${channels}`, "GET", undefined, forceRefresh);
+  // Use a short cache key — the full URL with channels is too long and the data can be large
+  const cacheKey = `/lap/${lap.startSeq}-${lap.endSeq}`;
+  const data = await apiFetch(`/wal/range?start_seq=${lap.startSeq}&end_seq=${lap.endSeq}&channels=${channels}`, "GET", undefined, forceRefresh, cacheKey);
   lapEntries = data.entries;
 
   // Sort all entries by timestamp, then build per-GPS-tick arrays

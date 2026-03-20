@@ -112,7 +112,7 @@ export function createDiagnostics(
   const grid = container.querySelector(".diag-grid") as HTMLElement;
 
   const cells: DiagCell[] = [
-    createCell(grid, "coolant_temp", "冷却 COOLANT", "\u00B0C", RED, 0, 130, 100),
+    createCell(grid, "coolant_temp", "冷却 COOLANT", "\u00B0F", RED, 32, 270, 212),
     createCell(grid, "manifold_pressure", "圧力 MAP", "kPa", ORANGE, 0, 110),
     createCell(grid, "battery_voltage", "電圧 BATTERY", "V", GREEN, 11, 15),
   ];
@@ -122,11 +122,19 @@ export function createDiagnostics(
       const buf = mgr.getBuffer(cell.channel);
       if (!buf || buf.values.length === 0) continue;
 
-      const smoothed = mgr.getSmoothed(cell.channel) ?? buf.values[buf.values.length - 1];
+      let smoothed = mgr.getSmoothed(cell.channel) ?? buf.values[buf.values.length - 1];
+      let drawValues = buf.values;
+
+      // Convert coolant temp C → F
+      if (cell.channel === "coolant_temp") {
+        smoothed = smoothed * 9 / 5 + 32;
+        drawValues = buf.values.map((v) => v * 9 / 5 + 32);
+      }
+
       cell.valueEl.textContent = cell.channel === "battery_voltage"
         ? smoothed.toFixed(1)
         : String(Math.round(smoothed));
-      drawSparkline(cell, buf.values);
+      drawSparkline(cell, drawValues);
 
       // warning state
       if (cell.warnAbove != null) {

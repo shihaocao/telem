@@ -44,20 +44,28 @@ export class TelemetryManager {
     return this.buffers.get(channel);
   }
 
-  /** Average of values within windowMs of the most recent server timestamp */
+  /** EWMA of values within windowMs of the most recent server timestamp.
+   *  Alpha is derived from window size: alpha = 2 / (N + 1) where N = samples in window. */
   getSmoothed(channel: string, windowMs = 500): number | undefined {
     const buf = this.buffers.get(channel);
     if (!buf || buf.values.length === 0) return undefined;
     const latest = buf.timestamps[buf.timestamps.length - 1];
     const cutoff = latest - windowMs / 1000;
-    let sum = 0;
-    let count = 0;
-    for (let i = buf.timestamps.length - 1; i >= 0; i--) {
-      if (buf.timestamps[i] < cutoff) break;
-      sum += buf.values[i];
-      count++;
+
+    // Find start of window
+    let start = buf.timestamps.length - 1;
+    while (start > 0 && buf.timestamps[start - 1] >= cutoff) start--;
+
+    const n = buf.timestamps.length - start;
+    if (n === 0) return buf.values[buf.values.length - 1];
+    if (n === 1) return buf.values[start];
+
+    const alpha = 2 / (n + 1);
+    let ema = buf.values[start];
+    for (let i = start + 1; i < buf.timestamps.length; i++) {
+      ema = alpha * buf.values[i] + (1 - alpha) * ema;
     }
-    return count > 0 ? sum / count : buf.values[buf.values.length - 1];
+    return ema;
   }
 
   connect(): void {

@@ -5,6 +5,7 @@ import * as path from "node:path";
 import * as http from "node:http";
 import { WalEngine } from "./wal.js";
 import { createServer } from "./http.js";
+import { SessionStore } from "./sessions.js";
 
 function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "http-test-"));
@@ -104,7 +105,6 @@ describe("HTTP server", () => {
     dataDir = tmpDir();
     wal = new WalEngine({ dataDir, snapshotThreshold: 50_000, fsyncBatchSize: 100 });
     await wal.init();
-    const { SessionStore } = await import("./sessions.js");
     server = createServer(wal, new SessionStore(dataDir));
     await new Promise<void>((resolve) => {
       server.listen(0, "127.0.0.1", () => resolve());

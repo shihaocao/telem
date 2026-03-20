@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { execSync } from "node:child_process";
 import { WalEngine, WalEntry } from "./wal.js";
-import { SessionStore } from "./sessions.js";
+import { SessionStore, type Lap } from "./sessions.js";
 import { LapDetector, type LapEvent } from "./lap-detector.js";
 
 function cors(res: http.ServerResponse): void {
@@ -333,12 +333,24 @@ async function handleSessions(
       let body: any;
       try { body = JSON.parse(raw); } catch { json(res, 400, { error: "invalid json" }); return; }
 
-      // When stopping a session, mark last lap as "in" lap
+      // When stopping a session, record the in-progress lap as "in" lap
       if (body.running === false) {
         const current = store.get(id);
-        if (current?.running && current.laps.length > 0) {
-          const last = current.laps[current.laps.length - 1];
-          if (last.flag === "clean") last.flag = "in";
+        if (current?.running) {
+          const now = Date.now();
+          const elapsed = now - current.lapStartTs;
+          if (elapsed > 5000) {
+            // Record the incomplete lap as an in-lap
+            const inLap: Lap = {
+              lap: current.laps.length + 1,
+              time: elapsed,
+              flag: "in",
+              track: current.track,
+              startSeq: current.lapStartSeq,
+              endSeq: wal.currentSeq,
+            };
+            current.laps.push(inLap);
+          }
           body.laps = current.laps;
         }
       }
