@@ -733,7 +733,8 @@ function updateSeek(idx: number) {
   if (lapTimestamps.length > 0) {
     seekTimeEl.textContent = formatTime(lapTimestamps[idx] - lapTimestamps[0]);
     const d = new Date(lapTimestamps[idx]);
-    seekEpochEl.textContent = `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}.${String(d.getMilliseconds()).padStart(3, "0")}`;
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone.split("/").pop() ?? "";
+    seekEpochEl.textContent = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")} ${tz}`;
   }
 
   // G-force dial
