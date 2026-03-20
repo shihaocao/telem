@@ -1,18 +1,18 @@
 @import "./fonts.css";
 
 :root {
-  --bg: #0a0a0a;
-  --panel-bg: #0d0d12;
-  --border: rgba(255, 107, 53, 0.12);
-  --border-bright: rgba(255, 107, 53, 0.3);
-  --accent: #ff6b35;
-  --accent-dim: rgba(255, 107, 53, 0.5);
-  --red: #e74c3c;
-  --green: #2ecc71;
-  --amber: #d4a017;
-  --text: #c8bfa0;
-  --text-bright: #f0e6d0;
-  --text-dim: rgba(200, 191, 160, 0.35);
+  --bg: #000000;
+  --panel-bg: #0a0a10;
+  --border: rgba(255, 123, 69, 0.15);
+  --border-bright: rgba(255, 123, 69, 0.35);
+  --accent: #ff7b45;
+  --accent-dim: rgba(255, 123, 69, 0.5);
+  --red: #ff4436;
+  --green: #3ddf80;
+  --amber: #e0b020;
+  --text: #ddd;
+  --text-bright: #fff;
+  --text-dim: rgba(255, 255, 255, 0.4);
   --font: "Berkeley Mono", "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
 }
 

@@ -110,8 +110,8 @@ if [ -n "$C930E_DEV" ]; then
   (sleep 3 && v4l2-ctl -d "$C930E_DEV" \
     --set-ctrl=zoom_absolute=100 \
     --set-ctrl=exposure_auto=1 \
-    --set-ctrl=exposure_absolute=250 \
-    --set-ctrl=gain=128 \
+    --set-ctrl=exposure_absolute=3 \
+    --set-ctrl=gain=32 \
     --set-ctrl=backlight_compensation=0 \
     --set-ctrl=brightness=128 \
     && echo "Applied C930e settings") &

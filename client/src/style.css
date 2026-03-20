@@ -8,23 +8,23 @@
 }
 
 :root {
-  --bg: #0a0a0a;
-  --panel-bg: #0d0d12;
-  --border: rgba(255, 255, 255, 0.06);
-  --border-bright: rgba(255, 255, 255, 0.12);
-  --accent: #ff6b35;
-  --accent-dim: rgba(255, 107, 53, 0.5);
-  --accent-glow: rgba(255, 107, 53, 0.15);
+  --bg: #000000;
+  --panel-bg: #0a0a10;
+  --border: rgba(255, 255, 255, 0.10);
+  --border-bright: rgba(255, 255, 255, 0.20);
+  --accent: #ff7b45;
+  --accent-dim: rgba(255, 123, 69, 0.5);
+  --accent-glow: rgba(255, 123, 69, 0.2);
   --cyan: #00d4aa;
   --cyan-dim: rgba(0, 212, 170, 0.5);
-  --red: #e74c3c;
-  --red-dim: rgba(231, 76, 60, 0.5);
-  --green: #2ecc71;
-  --amber: #d4a017;
-  --yellow: #f1c40f;
-  --text: #999;
-  --text-bright: #eee;
-  --text-dim: rgba(255, 255, 255, 0.2);
+  --red: #ff4436;
+  --red-dim: rgba(255, 68, 54, 0.5);
+  --green: #3ddf80;
+  --amber: #e0b020;
+  --yellow: #ffd320;
+  --text: #bbb;
+  --text-bright: #fff;
+  --text-dim: rgba(255, 255, 255, 0.35);
   --font: "Berkeley Mono", "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
 }
 
@@ -62,7 +62,7 @@ body::after {
   align-items: center;
   justify-content: space-between;
   padding: 6px 16px;
-  background: #060608;
+  background: #000000;
   border-bottom: 1px solid var(--border-bright);
   flex-shrink: 0;
   position: relative;
@@ -474,13 +474,9 @@ body::after {
   letter-spacing: 2px;
 }
 
-.gauge-gear-label {
-  margin-left: auto;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 2px;
-  color: var(--text-dim);
-  align-self: center;
+.gauge-gear-label,
+.gauge-gear-badge {
+  display: none;
 }
 
 .gauge-gear-badge {
@@ -628,7 +624,7 @@ body::after {
   align-items: center;
   justify-content: space-between;
   padding: 3px 16px;
-  background: #060608;
+  background: #000000;
   border-top: 1px solid var(--border);
   flex-shrink: 0;
   font-size: 8px;
