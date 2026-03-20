@@ -80,7 +80,9 @@ for i in "${!DEVICES[@]}"; do
     gst-launch-1.0 -e \
       v4l2src device="${dev}" \
       ! "image/jpeg,width=${w},height=${h},framerate=30/1" \
-      ! jpegdec ! nvvidconv ! 'video/x-raw(memory:NVMM)' \
+      ! jpegdec \
+      ! clockoverlay time-format="%H:%M:%S.%3N" halignment=left valignment=bottom font-desc="monospace 14" shaded-background=true \
+      ! nvvidconv ! 'video/x-raw(memory:NVMM)' \
       ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
       ! h264parse ! mux. \
       alsasrc device=hw:C930e,0 \

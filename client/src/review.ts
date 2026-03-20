@@ -58,6 +58,7 @@ const gaugesEl = document.getElementById("review-gauges")!;
 const legendEl = document.getElementById("review-legend")!;
 const seekEl = document.getElementById("review-seek") as HTMLInputElement;
 const seekTimeEl = document.getElementById("review-seek-time")!;
+const seekEpochEl = document.getElementById("review-seek-epoch")!;
 
 // ── Trail mode dropdown (opens upward) ──
 type TrailMode = "speed" | "throttle" | "rpm" | "gear" | "brake";
@@ -497,16 +498,36 @@ function renderSessionList() {
     const row = document.createElement("div");
     row.className = `review-session${session?.id === s.id ? " selected" : ""}`;
     row.innerHTML =
-      `<span class="review-session-driver">${s.driver || "UNKNOWN"}</span>` +
+      `<input class="review-session-driver" data-id="${s.id}" value="${s.driver || ""}" placeholder="DRIVER" />` +
       `<span class="review-session-info">${TRACKS[s.track]?.name ?? s.track}</span>` +
       `<span class="review-session-info">${formatDate(s.createdAt)}${s.running ? " // LIVE" : ""} // ${s.laps.length} laps</span>` +
       `<button class="review-session-del" data-id="${s.id}" title="Delete">\u00d7</button>`;
     row.addEventListener("click", (e) => {
-      if ((e.target as HTMLElement).closest(".review-session-del")) return;
+      const target = e.target as HTMLElement;
+      if (target.closest(".review-session-del") || target.closest(".review-session-driver")) return;
       selectSession(s.id);
     });
     sessionListEl.appendChild(row);
   }
+
+  // Driver name rename
+  let renameTimer: ReturnType<typeof setTimeout> | null = null;
+  sessionListEl.querySelectorAll<HTMLInputElement>(".review-session-driver").forEach((input) => {
+    input.addEventListener("input", () => {
+      const id = input.dataset.id!;
+      const newName = input.value;
+      // Update local state
+      const s = sessions.find((s) => s.id === id);
+      if (s) s.driver = newName;
+      if (session?.id === id) { session.driver = newName; updateMeta(); }
+      // Debounced save to server
+      if (renameTimer) clearTimeout(renameTimer);
+      renameTimer = setTimeout(async () => {
+        try { await apiFetch(`/sessions/${id}`, "PATCH", { driver: newName }, true); } catch {}
+      }, 500);
+    });
+    input.addEventListener("click", (e) => e.stopPropagation());
+  });
 
   sessionListEl.querySelectorAll(".review-session-del").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
@@ -555,7 +576,7 @@ function clearLapView() {
   lapListEl.innerHTML = "";
   lapCoords = []; lapSpeeds = []; lapThrottles = []; lapGx = []; lapGy = [];
   lapRpms = []; lapGears = []; lapBrakes = []; lapTimestamps = []; lapEntries = [];
-  seekEl.value = "0"; seekTimeEl.textContent = "0:00.000";
+  seekEl.value = "0"; seekTimeEl.textContent = "0:00.000"; seekEpochEl.textContent = "--";
   speedValueEl.textContent = "--";
   throttleValueEl.textContent = "--";
   rpmValueEl.textContent = "--";
@@ -711,6 +732,8 @@ function updateSeek(idx: number) {
 
   if (lapTimestamps.length > 0) {
     seekTimeEl.textContent = formatTime(lapTimestamps[idx] - lapTimestamps[0]);
+    const d = new Date(lapTimestamps[idx]);
+    seekEpochEl.textContent = `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}.${String(d.getMilliseconds()).padStart(3, "0")}`;
   }
 
   // G-force dial

@@ -117,6 +117,21 @@ body::after {
   font-weight: 700;
   color: var(--text-bright);
   letter-spacing: 1px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid transparent;
+  font-family: var(--font);
+  padding: 0;
+  width: 100%;
+  outline: none;
+}
+
+.review-session-driver:focus {
+  border-bottom-color: var(--accent-dim);
+}
+
+.review-session-driver::placeholder {
+  color: var(--text-dim);
 }
 
 .review-session-info {
@@ -462,6 +477,13 @@ body::after {
   color: var(--text-bright);
   font-variant-numeric: tabular-nums;
   min-width: 70px;
+}
+
+#review-seek-epoch {
+  font-size: 9px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  min-width: 80px;
 }
 
 #review-seek {

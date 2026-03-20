@@ -107,7 +107,7 @@ export function createDiagnostics(
   const grid = container.querySelector(".diag-grid") as HTMLElement;
 
   const cells: DiagCell[] = [
-    createCell(grid, "coolant_temp", "冷却 COOLANT", "\u00B0F", RED, 32, 270, 212, toF),
+    createCell(grid, "coolant_temp", "冷却 COOLANT", "\u00B0F", RED, 32, 270, 230, toF),
     createCell(grid, "manifold_pressure", "圧力 MAP", "kPa", ORANGE, 0, 110),
     createCell(grid, "battery_voltage", "電圧 BATTERY", "V", GREEN, 11, 15),
     createCell(grid, "jetson_temp", "基板 JETSON", "\u00B0C", CYAN, 20, 100, 85),

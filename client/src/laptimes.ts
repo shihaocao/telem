@@ -206,13 +206,13 @@ export function createLapTimes(
     reviewLink.style.display = session.laps.length > 0 ? "" : "none";
   }
 
-  // ── Driver input ──
-  let driverDebounce: ReturnType<typeof setTimeout> | null = null;
-  driverInput.addEventListener("input", () => {
-    if (!session) return;
+  // ── Driver input — save on Enter ──
+  driverInput.addEventListener("keydown", async (e) => {
+    if (e.key !== "Enter" || !session) return;
+    e.preventDefault();
     session.driver = driverInput.value;
-    if (driverDebounce) clearTimeout(driverDebounce);
-    driverDebounce = setTimeout(() => saveSession(), 500);
+    driverInput.blur();
+    try { await api("PATCH", `/sessions/${session.id}`, { driver: session.driver }); } catch {}
   });
 
   // ── Start/stop ──
