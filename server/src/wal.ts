@@ -108,9 +108,6 @@ export class WalEngine extends EventEmitter {
   async init(): Promise<void> {
     await fs.promises.mkdir(this.walDir, { recursive: true });
 
-    // Acquire lock — prevents concurrent servers or running during compaction
-    await this.acquireLock(`server pid ${process.pid}`);
-
     // Clean up partial compaction / legacy snapshots
     const tmpDir = path.join(this.walDir, "_compact_tmp");
     try { await fs.promises.rm(tmpDir, { recursive: true, force: true }); } catch {}

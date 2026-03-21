@@ -70,39 +70,36 @@ html, body {
 }
 
 #gauges {
-  flex: 1;
-  display: flex;
+  display: inline-flex;
   flex-direction: column;
   justify-content: center;
-  padding: 16px 20px;
-  gap: 6px;
+  padding: 10px 14px;
+  gap: 4px;
   overflow: hidden;
 }
 
-.spark-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.spark-meta {
-  flex-shrink: 0;
-  width: 110px;
+.gauge {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
 
-.spark-label {
-  font-size: 9px;
+.gauge-label {
+  font-size: 8px;
   font-weight: 700;
-  letter-spacing: 3px;
+  letter-spacing: 2px;
   color: var(--text-dim);
   text-shadow: 0 0 8px rgba(0, 0, 0, 0.8);
 }
 
-.spark-value {
-  font-size: 32px;
+.gauge-header {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.gauge-value {
+  font-size: 28px;
   font-weight: 700;
   color: #fff;
   line-height: 1;
@@ -110,10 +107,53 @@ html, body {
   text-shadow: 0 0 15px rgba(255, 255, 255, 0.3), 0 2px 8px rgba(0, 0, 0, 0.9);
 }
 
-.spark-canvas {
+.gauge-unit {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 2px;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+
+.gauge-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, var(--border-bright) 30%, var(--border-bright) 70%, transparent 100%);
+}
+
+.seg-track {
+  display: flex;
+  gap: 2px;
+  height: 12px;
+  transform: skewX(-12deg);
+  padding: 0 2px;
+}
+
+.seg {
   flex: 1;
-  height: 36px;
-  min-width: 0;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: background 0.05s, box-shadow 0.05s;
+}
+
+.gauge-brake {
+  display: flex;
+  gap: 2px;
+  height: 8px;
+  transform: skewX(-12deg);
+  padding: 0 2px;
+}
+
+.gauge-brake-seg {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: background 0.05s, box-shadow 0.05s;
+}
+
+.gauge-brake.active .gauge-brake-seg {
+  background: var(--red);
+  border-color: var(--red);
+  box-shadow: 0 0 8px rgba(231, 76, 60, 0.4), inset 0 0 4px rgba(231, 76, 60, 0.3);
 }
 
 
