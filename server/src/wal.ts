@@ -58,6 +58,10 @@ export class WalEngine extends EventEmitter {
     await fs.promises.mkdir(this.walDir, { recursive: true });
     await fs.promises.mkdir(this.snapDir, { recursive: true });
 
+    // Clean up partial compaction if interrupted
+    const tmpDir = path.join(this.walDir, "_compact_tmp");
+    try { await fs.promises.rm(tmpDir, { recursive: true, force: true }); } catch {}
+
     const snap = await this.loadLatestSnapshot();
     if (snap) {
       this.seq = snap.seq;
@@ -338,13 +342,20 @@ export class WalEngine extends EventEmitter {
     let fileMinSeq = Infinity, fileMaxSeq = -1;
     let fh = await fs.promises.open(path.join(tmpDir, walFileName(gen)), "w");
 
-    for (const file of files) {
+    let lastLog = Date.now();
+    for (let fi = 0; fi < files.length; fi++) {
+      const file = files[fi];
       const content = await fs.promises.readFile(path.join(this.walDir, file), "utf-8");
       for (const line of content.split("\n")) {
         if (line.length === 0 || line.startsWith("#")) continue;
         let entry: WalEntry;
         try { entry = JSON.parse(line) as WalEntry; } catch { continue; }
         oldEntryCount++;
+
+        if (Date.now() - lastLog > 2000) {
+          console.log(`  compacting... file ${fi + 1}/${files.length}, ${oldEntryCount} entries processed`);
+          lastLog = Date.now();
+        }
 
         if (entry.ts !== lastTs) { newSeq++; lastTs = entry.ts; }
         entry.seq = newSeq;
