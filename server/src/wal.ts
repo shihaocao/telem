@@ -373,12 +373,25 @@ export class WalEngine extends EventEmitter {
     this.close(); // releases existing lock
     await this.acquireLock(`compact pid ${process.pid}`);
 
+    let result: { oldFiles: number; oldEntries: number; newEntries: number; newSeq: number; sessionsRepaired: number };
     try {
-      return await this._compact();
+      result = await this._compact();
     } finally {
-      this._compacting = false;
       this.releaseLock();
     }
+
+    // Re-init with fresh lock, then repair sessions
+    this.byChannel.clear();
+    this.seq = 0;
+    this.generation = 1;
+    this.entriesInGeneration = 0;
+    this.entryCount = 0;
+    await this.init();
+
+    result.sessionsRepaired = await this.repairSessions();
+    this._compacting = false;
+
+    return result;
   }
 
   private async _compact(): Promise<{ oldFiles: number; oldEntries: number; newEntries: number; newSeq: number; sessionsRepaired: number }> {
@@ -466,17 +479,7 @@ export class WalEngine extends EventEmitter {
     }
     await fs.promises.rmdir(tmpDir);
 
-    // Re-init, then repair sessions using the new WAL data
-    this.byChannel.clear();
-    this.seq = 0;
-    this.generation = 1;
-    this.entriesInGeneration = 0;
-    this.entryCount = 0;
-    await this.init();
-
-    const sessionsRepaired = await this.repairSessions();
-
-    return { oldFiles: oldFileCount, oldEntries: oldEntryCount, newEntries: newEntryCount, newSeq, sessionsRepaired };
+    return { oldFiles: oldFileCount, oldEntries: oldEntryCount, newEntries: newEntryCount, newSeq, sessionsRepaired: 0 };
   }
 
   /** Repair session seq pointers by scanning WAL for matching timestamps */
