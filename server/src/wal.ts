@@ -440,9 +440,11 @@ export class WalEngine extends EventEmitter {
     let pendingSeq = 0;
 
     const writeTick = async () => {
-      if (pendingTs < 0) return;
+      if (pendingTs < 0 || Object.keys(pendingD).length === 0) return;
       const compactLine: WalLine = { seq: pendingSeq, ts: pendingTs, d: pendingD };
       writeBuf += JSON.stringify(compactLine) + "\n";
+      pendingTs = -1;
+      pendingD = {};
 
       if (pendingSeq < fileMinSeq) fileMinSeq = pendingSeq;
       if (pendingSeq > fileMaxSeq) fileMaxSeq = pendingSeq;
@@ -480,11 +482,13 @@ export class WalEngine extends EventEmitter {
         const oldSeq = entries[0].seq;
         const ts = entries[0].ts;
 
-        if (ts !== pendingTs) {
+        // Merge lines within 50ms into one tick
+        const tsBucket = Math.floor(ts / 50) * 50;
+        if (tsBucket !== pendingTs) {
           // Flush previous tick
           await writeTick();
           newSeq++;
-          pendingTs = ts;
+          pendingTs = tsBucket;
           pendingSeq = newSeq;
           pendingD = {};
         }
@@ -505,9 +509,11 @@ export class WalEngine extends EventEmitter {
     await fh.sync();
     await fh.close();
 
-    // Swap
+    // Swap — skip empty trailing files
     for (const file of files) await fs.promises.unlink(path.join(this.walDir, file));
     for (const file of await fs.promises.readdir(tmpDir)) {
+      const stat = await fs.promises.stat(path.join(tmpDir, file));
+      if (stat.size === 0) { await fs.promises.unlink(path.join(tmpDir, file)); continue; }
       await fs.promises.rename(path.join(tmpDir, file), path.join(this.walDir, file));
     }
     await fs.promises.rmdir(tmpDir);

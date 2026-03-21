@@ -119,6 +119,70 @@ describe("WalEngine", () => {
       expect(parsed.seq).toBe(1);
       expect(parsed.d.speed).toBe(100);
     });
+
+    it("batch append writes one multi-channel line on disk", () => {
+      wal.append(
+        { channel: "speed", value: 100 },
+        { channel: "rpm", value: 8000 },
+        { channel: "throttle", value: 42 },
+      );
+      wal.close();
+
+      const walFile = path.join(dataDir, "wal", "wal.000001.log");
+      const content = fs.readFileSync(walFile, "utf-8");
+      const lines = content.trim().split("\n");
+
+      // Single batch → single line on disk
+      expect(lines).toHaveLength(1);
+      const parsed = JSON.parse(lines[0]);
+      expect(parsed.seq).toBe(1);
+      expect(parsed.d).toEqual({ speed: 100, rpm: 8000, throttle: 42 });
+    });
+
+    it("batch append round-trips as one merged tick via getTicksInRange", async () => {
+      wal.append(
+        { channel: "gps_lat", value: 38.16 },
+        { channel: "gps_lon", value: -122.45 },
+        { channel: "gps_speed", value: 100 },
+      );
+      wal.append(
+        { channel: "gps_lat", value: 38.17 },
+        { channel: "gps_lon", value: -122.44 },
+      );
+
+      const ticks = await wal.getTicksInRange(1, 2);
+      expect(ticks).toHaveLength(2);
+
+      // First tick has all 3 channels merged
+      expect(ticks[0].seq).toBe(1);
+      expect(ticks[0].d).toEqual({ gps_lat: 38.16, gps_lon: -122.45, gps_speed: 100 });
+
+      // Second tick has 2 channels
+      expect(ticks[1].seq).toBe(2);
+      expect(ticks[1].d).toEqual({ gps_lat: 38.17, gps_lon: -122.44 });
+    });
+
+    it("batch append recovers merged ticks after restart", async () => {
+      wal.append(
+        { channel: "speed", value: 100 },
+        { channel: "rpm", value: 8000 },
+      );
+      wal.append(
+        { channel: "speed", value: 110 },
+        { channel: "rpm", value: 8500 },
+      );
+      wal.close();
+
+      const wal2 = new WalEngine({ dataDir, snapshotThreshold: 50_000, fsyncBatchSize: 10 });
+      await wal2.init();
+
+      const ticks = await wal2.getTicksInRange(1, 2);
+      expect(ticks).toHaveLength(2);
+      expect(ticks[0].d).toEqual({ speed: 100, rpm: 8000 });
+      expect(ticks[1].d).toEqual({ speed: 110, rpm: 8500 });
+
+      wal2.close();
+    });
   });
 
   describe("recovery", () => {
@@ -313,6 +377,127 @@ describe("WalEngine", () => {
 
       // fresh WAL file created by init, but no old data
       expect(wal.totalEntries).toBe(0);
+    });
+  });
+
+  describe("compact", () => {
+    it("merges single-channel lines with same timestamp into one tick", async () => {
+      const ts = 1000000;
+      // Simulate old per-channel ingestion (separate appends, same ts)
+      wal.append({ channel: "gps_lat", value: 38.16, ts });
+      wal.append({ channel: "gps_lon", value: -122.45, ts });
+      wal.append({ channel: "gps_speed", value: 100, ts });
+
+      await wal.compact();
+
+      const ticks = await wal.getTicksInRange(1, 100);
+      expect(ticks).toHaveLength(1);
+      expect(ticks[0].d).toEqual({ gps_lat: 38.16, gps_lon: -122.45, gps_speed: 100 });
+    });
+
+    it("merges lines within 50ms into one tick", async () => {
+      wal.append({ channel: "gps_lat", value: 38.16, ts: 1000000 });
+      wal.append({ channel: "rpm", value: 3000, ts: 1000030 }); // +30ms, same bucket
+      wal.append({ channel: "speed", value: 80, ts: 1000100 });  // +100ms, different bucket
+
+      await wal.compact();
+
+      const ticks = await wal.getTicksInRange(1, 100);
+      expect(ticks).toHaveLength(2);
+      expect(ticks[0].d).toEqual({ gps_lat: 38.16, rpm: 3000 });
+      expect(ticks[1].d).toEqual({ speed: 80 });
+    });
+
+    it("reassigns sequential seq numbers", async () => {
+      wal.append({ channel: "a", value: 1, ts: 1000 });
+      wal.append({ channel: "b", value: 2, ts: 1000 });
+      wal.append({ channel: "c", value: 3, ts: 2000 });
+
+      await wal.compact();
+
+      const ticks = await wal.getTicksInRange(1, 100);
+      expect(ticks).toHaveLength(2);
+      expect(ticks[0].seq).toBe(1);
+      expect(ticks[1].seq).toBe(2);
+    });
+
+    it("splits output files at snapshotThreshold", async () => {
+      wal.close();
+      fs.rmSync(dataDir, { recursive: true, force: true });
+
+      dataDir = tmpDir();
+      wal = new WalEngine({ dataDir, snapshotThreshold: 3, fsyncBatchSize: 10 });
+      await wal.init();
+
+      // 5 distinct timestamps → 5 ticks → should split into 2 files (3 + 2)
+      for (let i = 0; i < 5; i++) {
+        wal.append({ channel: "ch", value: i, ts: (i + 1) * 1000 });
+      }
+
+      await wal.compact();
+
+      const walFiles = fs.readdirSync(path.join(dataDir, "wal")).filter((f) => f.startsWith("wal."));
+      expect(walFiles.length).toBe(2);
+
+      const ticks = await wal.getTicksInRange(1, 10);
+      expect(ticks).toHaveLength(5);
+    });
+
+    it("writes range footers on each file", async () => {
+      wal.close();
+      fs.rmSync(dataDir, { recursive: true, force: true });
+
+      dataDir = tmpDir();
+      wal = new WalEngine({ dataDir, snapshotThreshold: 2, fsyncBatchSize: 10 });
+      await wal.init();
+
+      for (let i = 0; i < 4; i++) {
+        wal.append({ channel: "ch", value: i, ts: (i + 1) * 1000 });
+      }
+
+      await wal.compact();
+
+      const walDir = path.join(dataDir, "wal");
+      const files = fs.readdirSync(walDir).filter((f) => f.startsWith("wal.")).sort();
+      for (const file of files) {
+        const content = fs.readFileSync(path.join(walDir, file), "utf-8");
+        const lines = content.trim().split("\n");
+        const lastLine = lines[lines.length - 1];
+        expect(lastLine).toMatch(/^#range:\d+,\d+$/);
+      }
+    });
+
+    it("later-channel values win on merge", async () => {
+      // If same channel appears twice in the same 50ms bucket, last write wins
+      wal.append({ channel: "speed", value: 50, ts: 1000000 });
+      wal.append({ channel: "speed", value: 75, ts: 1000010 });
+
+      await wal.compact();
+
+      const ticks = await wal.getTicksInRange(1, 100);
+      expect(ticks).toHaveLength(1);
+      expect(ticks[0].d.speed).toBe(75);
+    });
+
+    it("preserves data across multiple generations", async () => {
+      wal.close();
+      fs.rmSync(dataDir, { recursive: true, force: true });
+
+      dataDir = tmpDir();
+      wal = new WalEngine({ dataDir, snapshotThreshold: 3, fsyncBatchSize: 10 });
+      await wal.init();
+
+      // Write enough to trigger rotation, with mergeable timestamps
+      for (let i = 0; i < 10; i++) {
+        wal.append({ channel: "ch", value: i, ts: (i + 1) * 1000 });
+      }
+
+      await wal.compact();
+
+      const ticks = await wal.getTicksInRange(1, 20);
+      expect(ticks).toHaveLength(10);
+      expect(ticks[0].d.ch).toBe(0);
+      expect(ticks[9].d.ch).toBe(9);
     });
   });
 });
