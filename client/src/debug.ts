@@ -196,7 +196,7 @@ function connect(): void {
   statusEl.textContent = "CONNECTING";
   statusEl.className = "";
 
-  const es = new EventSource(`${SERVER_URL}/stream?history=false`);
+  const es = new EventSource(`${SERVER_URL}/stream`);
 
   es.addEventListener("entry", (e) => {
     const { channel, value } = JSON.parse(e.data);

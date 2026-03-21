@@ -69,7 +69,7 @@ export class TelemetryManager {
 
     this.setState("connecting");
 
-    const es = new EventSource(`${SERVER_URL}/stream?history=false`);
+    const es = new EventSource(`${SERVER_URL}/stream`);
     this.es = es;
 
     es.addEventListener("entry", (e) => {
