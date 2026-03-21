@@ -324,6 +324,7 @@ export class WalEngine extends EventEmitter {
     let writeBuf = "";
 
     const tsToSeq = new Map<number, number>();
+    const oldToNewSeq = new Map<number, number>();
 
     async function flushBuf() {
       if (writeBuf.length > 0) { await fh.write(writeBuf); writeBuf = ""; }
@@ -343,9 +344,11 @@ export class WalEngine extends EventEmitter {
           lastLog = Date.now();
         }
 
+        const oldSeq = entries[0].seq;
         const ts = entries[0].ts;
         if (ts !== lastTs) { newSeq++; lastTs = ts; }
         tsToSeq.set(ts, newSeq);
+        oldToNewSeq.set(oldSeq, newSeq);
 
         // Write as compact multi-channel format
         const d: Record<string, unknown> = {};
@@ -386,10 +389,7 @@ export class WalEngine extends EventEmitter {
     }
     await fs.promises.rmdir(tmpDir);
 
-    // Repair sessions
-    const sessionsRepaired = await this.repairSessions(tsToSeq);
-
-    // Re-init
+    // Re-init, then repair sessions using the new WAL data
     this.byChannel.clear();
     this.seq = 0;
     this.generation = 1;
@@ -397,29 +397,44 @@ export class WalEngine extends EventEmitter {
     this.entryCount = 0;
     await this.init();
 
+    const sessionsRepaired = await this.repairSessions();
+
     return { oldFiles: oldFileCount, oldEntries: oldEntryCount, newEntries: newEntryCount, newSeq, sessionsRepaired };
   }
 
-  private async repairSessions(tsToSeq: Map<number, number>): Promise<number> {
+  /** Repair session seq pointers by scanning WAL for matching timestamps */
+  async repairSessions(): Promise<number> {
     const sessionsDir = path.join(this.config.dataDir, "sessions");
     try { await fs.promises.access(sessionsDir); } catch { return 0; }
 
-    const files = (await fs.promises.readdir(sessionsDir)).filter((f) => f.endsWith(".json"));
-    let repaired = 0;
+    // Build sorted ts→seq index from all WAL files
+    console.log("  building timestamp index...");
+    const tsIndex: [number, number][] = []; // [ts, seq]
+    const walFiles = (await fs.promises.readdir(this.walDir)).filter((f) => f.startsWith("wal.")).sort();
+    for (const file of walFiles) {
+      const content = await fs.promises.readFile(path.join(this.walDir, file), "utf-8");
+      for (const raw of content.split("\n")) {
+        const tick = parseTickLine(raw);
+        if (tick) tsIndex.push([tick.ts, tick.seq]);
+      }
+    }
+    tsIndex.sort((a, b) => a[0] - b[0]);
 
-    const tsEntries = Array.from(tsToSeq.entries()).sort((a, b) => a[0] - b[0]);
+    if (tsIndex.length === 0) { console.log("  no WAL data to index"); return 0; }
 
     function findSeqForTs(ts: number): number {
-      let lo = 0, hi = tsEntries.length - 1;
-      if (hi < 0) return 0;
+      let lo = 0, hi = tsIndex.length - 1;
       while (lo < hi) {
         const mid = (lo + hi) >>> 1;
-        if (tsEntries[mid][0] < ts) lo = mid + 1;
+        if (tsIndex[mid][0] < ts) lo = mid + 1;
         else hi = mid;
       }
-      if (lo > 0 && Math.abs(tsEntries[lo - 1][0] - ts) < Math.abs(tsEntries[lo][0] - ts)) lo--;
-      return tsEntries[lo][1];
+      if (lo > 0 && Math.abs(tsIndex[lo - 1][0] - ts) < Math.abs(tsIndex[lo][0] - ts)) lo--;
+      return tsIndex[lo][1];
     }
+
+    const files = (await fs.promises.readdir(sessionsDir)).filter((f) => f.endsWith(".json"));
+    let repaired = 0;
 
     for (const file of files) {
       const filePath = path.join(sessionsDir, file);
@@ -428,28 +443,32 @@ export class WalEngine extends EventEmitter {
         const session = JSON.parse(raw);
         let changed = false;
 
+        // Repair lapStartSeq
         if (session.lapStartTs) {
           const newSeq = findSeqForTs(session.lapStartTs);
           if (newSeq !== session.lapStartSeq) { session.lapStartSeq = newSeq; changed = true; }
         }
 
+        // Repair each lap's seq pointers using cumulative timestamps
         if (Array.isArray(session.laps)) {
+          let lapStart = session.createdAt;
           for (const lap of session.laps) {
-            const lapEndTs = session.createdAt + session.laps.slice(0, session.laps.indexOf(lap) + 1).reduce((s: number, l: any) => s + l.time, 0);
-            const lapStartTs = lapEndTs - lap.time;
-            const newStart = findSeqForTs(lapStartTs);
-            const newEnd = findSeqForTs(lapEndTs);
+            const lapEnd = lapStart + lap.time;
+            const newStart = findSeqForTs(lapStart);
+            const newEnd = findSeqForTs(lapEnd);
             if (newStart !== lap.startSeq || newEnd !== lap.endSeq) {
               lap.startSeq = newStart;
               lap.endSeq = newEnd;
               changed = true;
             }
+            lapStart = lapEnd;
           }
         }
 
         if (changed) {
           await fs.promises.writeFile(filePath, JSON.stringify(session));
           repaired++;
+          console.log(`  fixed: ${session.driver || session.id} (${session.laps?.length ?? 0} laps)`);
         }
       } catch {}
     }
