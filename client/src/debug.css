@@ -65,44 +65,11 @@ h1 .jp { font-size: 9px; color: var(--text-dim); letter-spacing: 2px; }
 
 .nav-link:hover { color: var(--accent); border-color: var(--accent-dim); }
 
-#cam-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 16px;
-  background: var(--panel-bg);
-  border: 1px solid var(--border);
-  padding: 8px 14px;
-  width: fit-content;
-}
-
 .cam-label {
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 2px;
   color: var(--accent-dim);
-}
-
-#cam-controls button {
-  background: transparent;
-  border: 1px solid var(--border-bright);
-  color: var(--text);
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 700;
-  width: 28px;
-  height: 28px;
-  cursor: pointer;
-}
-
-#cam-controls button:hover { background: rgba(255, 107, 53, 0.1); }
-
-#exp-val {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-bright);
-  min-width: 120px;
-  text-align: center;
 }
 
 #debug-controls {
@@ -136,6 +103,153 @@ h1 .jp { font-size: 9px; color: var(--text-dim); letter-spacing: 2px; }
 }
 
 #latency-canvas { height: 30px; width: 200px; }
+
+/* ── Services panel ── */
+#services-panel {
+  margin-bottom: 16px;
+}
+
+#services-panel h2 {
+  font-size: 11px;
+  letter-spacing: 3px;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+#services-panel h2 .jp {
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 2px;
+}
+
+#sudo-pass {
+  background: transparent;
+  border: 1px solid var(--border-bright);
+  color: var(--text-bright);
+  font-family: var(--font);
+  font-size: 9px;
+  padding: 3px 8px;
+  width: 140px;
+  margin-left: 12px;
+}
+
+#sudo-pass:focus { outline: 1px solid var(--accent-dim); }
+
+#services-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.svc-row {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  padding: 0;
+}
+
+.svc-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+}
+
+.svc-status {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #555;
+}
+
+.svc-status[data-status="active"] {
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+}
+
+.svc-status[data-status="inactive"],
+.svc-status[data-status="failed"] {
+  background: var(--red);
+  box-shadow: 0 0 6px var(--red);
+}
+
+.svc-status[data-status="activating"] {
+  background: var(--amber);
+  box-shadow: 0 0 6px var(--amber);
+}
+
+.svc-name {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-bright);
+  letter-spacing: 1px;
+  flex: 1;
+}
+
+.svc-desc {
+  font-size: 8px;
+  color: var(--text-dim);
+  flex: 1;
+}
+
+.svc-status-text {
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+  min-width: 60px;
+}
+
+.svc-btn {
+  background: transparent;
+  border: 1px solid var(--border-bright);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.svc-btn:hover {
+  border-color: var(--accent-dim);
+  color: var(--text-bright);
+}
+
+.svc-restart-btn:hover {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.svc-cam-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.svc-cam-val {
+  font-size: 8px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  min-width: 90px;
+  text-align: center;
+}
+
+.svc-logs {
+  display: none;
+  background: #000;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 9px;
+  line-height: 1.4;
+  padding: 8px 10px;
+  margin: 0;
+  max-height: 300px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
 
 #channels {
   display: grid;

@@ -228,23 +228,6 @@ function connect(): void {
   };
 }
 
-// Camera exposure controls
-const expVal = document.getElementById("exp-val")!;
-async function camExposure(action: string | null): Promise<void> {
-  try {
-    const url = action
-      ? `${SERVER_URL}/cam/exposure/${action}`
-      : `${SERVER_URL}/cam/exposure`;
-    const res = await fetch(url, { method: action ? "POST" : "GET" });
-    const data = await res.json();
-    if (data.exposure_absolute != null) {
-      expVal.textContent = `exp:${data.exposure_absolute} gain:${data.gain}`;
-    }
-  } catch { /* ignore */ }
-}
-document.getElementById("exp-up")!.addEventListener("click", () => camExposure("up"));
-document.getElementById("exp-down")!.addEventListener("click", () => camExposure("down"));
-camExposure(null);
 
 document.getElementById("nuke-btn")!.addEventListener("click", async () => {
   if (!confirm("Clear all telemetry data on the server?")) return;
@@ -255,6 +238,137 @@ document.getElementById("nuke-btn")!.addEventListener("click", async () => {
     console.error("nuke failed:", (err as Error).message);
   }
 });
+
+// ── Services panel ──
+const servicesList = document.getElementById("services-list")!;
+
+interface ServiceState {
+  name: string;
+  status: string;
+  el: HTMLElement;
+  statusEl: HTMLElement;
+  logsEl: HTMLElement;
+  logsVisible: boolean;
+}
+
+const services: ServiceState[] = [];
+
+const SERVICE_DESC: Record<string, string> = {
+  "racebox-connect": "BLE connection to RaceBox Micro",
+  "telem-server": "WAL telemetry server (port 4400)",
+  "racebox-bridge": "RaceBox BLE → telem ingest",
+  "serial-bridge": "Arduino Mega serial → telem ingest",
+  "video-streaming": "GStreamer camera streams over SRT",
+};
+
+function createServiceRow(name: string, status: string): ServiceState {
+  const el = document.createElement("div");
+  el.className = "svc-row";
+  el.innerHTML = `
+    <div class="svc-header">
+      <span class="svc-status" data-status="${status}"></span>
+      <span class="svc-name">${name}</span>
+      <span class="svc-desc">${SERVICE_DESC[name] ?? ""}</span>
+      <span class="svc-status-text">${status}</span>
+      <button class="svc-btn svc-logs-btn">LOGS</button>
+      <button class="svc-btn svc-restart-btn">RESTART</button>
+    </div>
+    <pre class="svc-logs"></pre>
+  `;
+  servicesList.appendChild(el);
+
+  const statusDot = el.querySelector(".svc-status") as HTMLElement;
+  const statusText = el.querySelector(".svc-status-text") as HTMLElement;
+  const logsEl = el.querySelector(".svc-logs") as HTMLElement;
+  const logsBtn = el.querySelector(".svc-logs-btn") as HTMLElement;
+  const restartBtn = el.querySelector(".svc-restart-btn") as HTMLElement;
+
+  // Add cam exposure controls for video-streaming service
+  if (name === "video-streaming") {
+    const camControls = document.createElement("div");
+    camControls.className = "svc-cam-controls";
+    camControls.innerHTML = `<button class="svc-btn" id="svc-exp-down">-</button><span class="svc-cam-val" id="svc-exp-val">--</span><button class="svc-btn" id="svc-exp-up">+</button>`;
+    el.querySelector(".svc-header")!.insertBefore(camControls, logsBtn);
+
+    const expValEl = camControls.querySelector("#svc-exp-val")!;
+    async function camExposure(action: string | null) {
+      try {
+        const url = action ? `${SERVER_URL}/cam/exposure/${action}` : `${SERVER_URL}/cam/exposure`;
+        const res = await fetch(url, { method: action ? "POST" : "GET" });
+        const data = await res.json();
+        if (data.exposure_absolute != null) expValEl.textContent = `exp:${data.exposure_absolute} gain:${data.gain}`;
+      } catch {}
+    }
+    camControls.querySelector("#svc-exp-down")!.addEventListener("click", () => camExposure("down"));
+    camControls.querySelector("#svc-exp-up")!.addEventListener("click", () => camExposure("up"));
+    camExposure(null);
+  }
+
+  const state: ServiceState = { name, status, el, statusEl: statusDot, logsEl, logsVisible: false };
+
+  logsBtn.addEventListener("click", async () => {
+    state.logsVisible = !state.logsVisible;
+    if (state.logsVisible) {
+      logsBtn.textContent = "HIDE";
+      logsEl.style.display = "block";
+      try {
+        const res = await fetch(`${SERVER_URL}/services/${name}/logs`);
+        const data = await res.json();
+        logsEl.textContent = data.logs || "(no logs)";
+        logsEl.scrollTop = logsEl.scrollHeight;
+      } catch {
+        logsEl.textContent = "(failed to fetch logs)";
+      }
+    } else {
+      logsBtn.textContent = "LOGS";
+      logsEl.style.display = "none";
+    }
+  });
+
+  restartBtn.addEventListener("click", async () => {
+    if (!confirm(`Restart ${name}?`)) return;
+    restartBtn.textContent = "...";
+    const password = (document.getElementById("sudo-pass") as HTMLInputElement).value;
+    try {
+      await fetch(`${SERVER_URL}/services/${name}/restart`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      restartBtn.textContent = "OK";
+      setTimeout(() => { restartBtn.textContent = "RESTART"; refreshServices(); }, 1500);
+    } catch {
+      restartBtn.textContent = "FAIL";
+      setTimeout(() => { restartBtn.textContent = "RESTART"; }, 1500);
+    }
+  });
+
+  return state;
+}
+
+function updateServiceRow(svc: ServiceState, status: string) {
+  svc.status = status;
+  svc.statusEl.dataset.status = status;
+  svc.el.querySelector(".svc-status-text")!.textContent = status;
+}
+
+async function refreshServices() {
+  try {
+    const res = await fetch(`${SERVER_URL}/services`);
+    const data: { name: string; status: string }[] = await res.json();
+    for (const d of data) {
+      const existing = services.find((s) => s.name === d.name);
+      if (existing) {
+        updateServiceRow(existing, d.status);
+      } else {
+        services.push(createServiceRow(d.name, d.status));
+      }
+    }
+  } catch { /* server unreachable */ }
+}
+
+refreshServices();
+setInterval(refreshServices, 5000);
 
 connect();
 propagateQueryParams();

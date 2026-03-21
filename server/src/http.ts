@@ -85,6 +85,17 @@ export function createServer(wal: WalEngine, sessions: SessionStore, lapDetector
         json(res, 200, handleCamAdjustExposure(1));
       } else if (req.method === "POST" && pathname === "/cam/exposure/down") {
         json(res, 200, handleCamAdjustExposure(-1));
+      } else if (req.method === "GET" && pathname === "/services") {
+        json(res, 200, handleServicesStatus());
+      } else if (req.method === "GET" && pathname.startsWith("/services/") && pathname.endsWith("/logs")) {
+        const svc = pathname.split("/")[2];
+        json(res, 200, handleServiceLogs(svc));
+      } else if (req.method === "POST" && pathname.startsWith("/services/") && pathname.endsWith("/restart")) {
+        const svc = pathname.split("/")[2];
+        const raw = await readBody(req);
+        let body: any = {};
+        try { body = JSON.parse(raw); } catch {}
+        json(res, 200, handleServiceRestart(svc, body.password));
       } else if (req.method === "POST" && pathname === "/nuke") {
         await wal.nuke();
         json(res, 200, { ok: true });
@@ -364,6 +375,51 @@ async function handleSessions(
     } else {
       json(res, 405, { error: "method not allowed" });
     }
+  }
+}
+
+// --- Systemctl service management ---
+
+const MANAGED_SERVICES = [
+  "racebox-connect",
+  "telem-server",
+  "racebox-bridge",
+  "serial-bridge",
+  "video-streaming",
+];
+
+function handleServicesStatus(): Record<string, unknown>[] {
+  return MANAGED_SERVICES.map((svc) => {
+    try {
+      const raw = execSync(`systemctl is-active ${svc} 2>/dev/null`, { encoding: "utf-8" }).trim();
+      return { name: svc, status: raw };
+    } catch {
+      return { name: svc, status: "unknown" };
+    }
+  });
+}
+
+function handleServiceLogs(svc: string): Record<string, unknown> {
+  if (!MANAGED_SERVICES.includes(svc)) return { error: "unknown service" };
+  try {
+    const logs = execSync(`journalctl -u ${svc} -n 50 --no-pager --output=short-iso 2>/dev/null`, { encoding: "utf-8" });
+    return { name: svc, logs };
+  } catch (err: any) {
+    return { name: svc, logs: "", error: err.message };
+  }
+}
+
+function handleServiceRestart(svc: string, password?: string): Record<string, unknown> {
+  if (!MANAGED_SERVICES.includes(svc)) return { error: "unknown service" };
+  try {
+    if (password) {
+      execSync(`echo ${JSON.stringify(password)} | sudo -S systemctl restart ${svc} 2>&1`, { encoding: "utf-8" });
+    } else {
+      execSync(`sudo systemctl restart ${svc} 2>&1`, { encoding: "utf-8" });
+    }
+    return { name: svc, ok: true };
+  } catch (err: any) {
+    return { name: svc, ok: false, error: err.message };
   }
 }
 

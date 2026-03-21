@@ -14,12 +14,6 @@
     <a href="/editor.html" class="nav-link">EDITOR</a>
   </h1>
   <div id="debug-controls">
-    <div id="cam-controls">
-      <span class="cam-label">CAM EXPOSURE</span>
-      <button id="exp-down">-</button>
-      <span id="exp-val">--</span>
-      <button id="exp-up">+</button>
-    </div>
     <div id="latency-panel">
       <span class="cam-label">LAST UPDATE</span>
       <span id="last-update">--</span>
@@ -27,6 +21,12 @@
       <span id="latency-val">--</span>
       <canvas id="latency-canvas" width="200" height="30"></canvas>
     </div>
+  </div>
+  <div id="services-panel">
+    <h2>SERVICES <span class="jp">サービス</span>
+      <input id="sudo-pass" type="password" placeholder="sudo password" />
+    </h2>
+    <div id="services-list"></div>
   </div>
   <div id="channels"></div>
   <script type="module" src="/src/debug.ts"></script>
