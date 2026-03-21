@@ -33,6 +33,7 @@ export interface WalConfig {
 }
 
 const WAL_DIR = "wal";
+const LOCK_FILE = "wal.lock";
 const MAX_CHANNEL_ENTRIES = 6000;
 
 function walFileName(gen: number): string {
@@ -105,6 +106,9 @@ export class WalEngine extends EventEmitter {
 
   async init(): Promise<void> {
     await fs.promises.mkdir(this.walDir, { recursive: true });
+
+    // Acquire lock — prevents concurrent servers or running during compaction
+    await this.acquireLock(`server pid ${process.pid}`);
 
     // Clean up partial compaction / legacy snapshots
     const tmpDir = path.join(this.walDir, "_compact_tmp");
@@ -357,8 +361,17 @@ export class WalEngine extends EventEmitter {
   // ── Maintenance ──
 
   async compact(): Promise<{ oldFiles: number; oldEntries: number; newEntries: number; newSeq: number; sessionsRepaired: number }> {
-    this.close();
+    this.close(); // releases existing lock
+    await this.acquireLock(`compact pid ${process.pid}`);
 
+    try {
+      return await this._compact();
+    } finally {
+      this.releaseLock();
+    }
+  }
+
+  private async _compact(): Promise<{ oldFiles: number; oldEntries: number; newEntries: number; newSeq: number; sessionsRepaired: number }> {
     const snapDir = path.join(this.config.dataDir, "snapshots");
     try { await fs.promises.rm(snapDir, { recursive: true, force: true }); } catch {}
 
@@ -544,5 +557,30 @@ export class WalEngine extends EventEmitter {
       try { fs.fsyncSync(this.fd); fs.closeSync(this.fd); } catch {}
       this.fd = null;
     }
+    this.releaseLock();
+  }
+
+  private get lockPath(): string {
+    return path.join(this.config.dataDir, LOCK_FILE);
+  }
+
+  private async acquireLock(reason: string): Promise<void> {
+    try {
+      // O_EXCL fails if file already exists — atomic check-and-create
+      const fd = fs.openSync(this.lockPath, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL);
+      fs.writeSync(fd, `${reason}\nstarted ${new Date().toISOString()}\n`);
+      fs.closeSync(fd);
+    } catch (err: any) {
+      if (err.code === "EEXIST") {
+        let info = "";
+        try { info = fs.readFileSync(this.lockPath, "utf-8").trim(); } catch {}
+        throw new Error(`WAL is locked (${this.lockPath}). Another process may be running:\n  ${info}\nRemove the lock file manually if this is stale.`);
+      }
+      throw err;
+    }
+  }
+
+  private releaseLock(): void {
+    try { fs.unlinkSync(this.lockPath); } catch {}
   }
 }
