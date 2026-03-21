@@ -32,10 +32,11 @@ async function main() {
 
   const result = await wal.compact();
   console.log(`done:`);
-  console.log(`  old files:   ${result.oldFiles}`);
-  console.log(`  old entries: ${result.oldEntries}`);
-  console.log(`  new entries: ${result.newEntries}`);
-  console.log(`  new max seq: ${result.newSeq}`);
+  console.log(`  old files:      ${result.oldFiles}`);
+  console.log(`  old entries:    ${result.oldEntries}`);
+  console.log(`  new entries:    ${result.newEntries}`);
+  console.log(`  new max seq:    ${result.newSeq}`);
+  console.log(`  sessions fixed: ${result.sessionsRepaired}`);
 
   wal.close();
 }

@@ -303,7 +303,7 @@ export class WalEngine extends EventEmitter {
 
   // ── Maintenance ──
 
-  async compact(): Promise<{ oldFiles: number; oldEntries: number; newEntries: number; newSeq: number }> {
+  async compact(): Promise<{ oldFiles: number; oldEntries: number; newEntries: number; newSeq: number; sessionsRepaired: number }> {
     this.close();
 
     // Clean up legacy snapshots
@@ -317,11 +317,20 @@ export class WalEngine extends EventEmitter {
     await fs.promises.mkdir(tmpDir, { recursive: true });
 
     const maxPerFile = this.config.snapshotThreshold;
+    const WRITE_BUF_SIZE = 8192;
     let newSeq = 0, lastTs = -1;
     let gen = 1, count = 0;
     let oldEntryCount = 0, newEntryCount = 0;
     let fileMinSeq = Infinity, fileMaxSeq = -1;
     let fh = await fs.promises.open(path.join(tmpDir, walFileName(gen)), "w");
+    let writeBuf = "";
+
+    // Build ts→seq map for session repair
+    const tsToSeq = new Map<number, number>();
+
+    async function flushBuf() {
+      if (writeBuf.length > 0) { await fh.write(writeBuf); writeBuf = ""; }
+    }
 
     let lastLog = Date.now();
     for (let fi = 0; fi < files.length; fi++) {
@@ -340,14 +349,18 @@ export class WalEngine extends EventEmitter {
 
         if (entry.ts !== lastTs) { newSeq++; lastTs = entry.ts; }
         entry.seq = newSeq;
+        tsToSeq.set(entry.ts, newSeq);
 
-        await fh.write(JSON.stringify(entry) + "\n");
+        writeBuf += JSON.stringify(entry) + "\n";
         if (entry.seq < fileMinSeq) fileMinSeq = entry.seq;
         if (entry.seq > fileMaxSeq) fileMaxSeq = entry.seq;
         newEntryCount++;
         count++;
 
+        if (writeBuf.length >= WRITE_BUF_SIZE) await flushBuf();
+
         if (count >= maxPerFile) {
+          await flushBuf();
           await fh.write(`#range:${fileMinSeq},${fileMaxSeq}\n`);
           await fh.sync();
           await fh.close();
@@ -360,6 +373,7 @@ export class WalEngine extends EventEmitter {
       }
     }
 
+    await flushBuf();
     if (fileMaxSeq >= 0) await fh.write(`#range:${fileMinSeq},${fileMaxSeq}\n`);
     await fh.sync();
     await fh.close();
@@ -371,6 +385,9 @@ export class WalEngine extends EventEmitter {
     }
     await fs.promises.rmdir(tmpDir);
 
+    // Repair session seq pointers using ts→seq map
+    const sessionsRepaired = await this.repairSessions(tsToSeq);
+
     // Re-init
     this.byChannel.clear();
     this.seq = 0;
@@ -379,7 +396,76 @@ export class WalEngine extends EventEmitter {
     this.entryCount = 0;
     await this.init();
 
-    return { oldFiles: oldFileCount, oldEntries: oldEntryCount, newEntries: newEntryCount, newSeq };
+    return { oldFiles: oldFileCount, oldEntries: oldEntryCount, newEntries: newEntryCount, newSeq, sessionsRepaired };
+  }
+
+  /** Repair session startSeq/endSeq pointers after compaction using ts→seq mapping */
+  private async repairSessions(tsToSeq: Map<number, number>): Promise<number> {
+    const sessionsDir = path.join(this.config.dataDir, "sessions");
+    try { await fs.promises.access(sessionsDir); } catch { return 0; }
+
+    const files = (await fs.promises.readdir(sessionsDir)).filter((f) => f.endsWith(".json"));
+    let repaired = 0;
+
+    // Build sorted ts→seq array for nearest-match lookup
+    const tsEntries = Array.from(tsToSeq.entries()).sort((a, b) => a[0] - b[0]);
+
+    function findSeqForTs(ts: number): number {
+      // Binary search for nearest timestamp
+      let lo = 0, hi = tsEntries.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if (tsEntries[mid][0] < ts) lo = mid + 1;
+        else hi = mid;
+      }
+      if (tsEntries.length === 0) return 0;
+      // Check lo and lo-1 for closest
+      if (lo > 0 && Math.abs(tsEntries[lo - 1][0] - ts) < Math.abs(tsEntries[lo][0] - ts)) lo--;
+      return tsEntries[lo][1];
+    }
+
+    for (const file of files) {
+      const filePath = path.join(sessionsDir, file);
+      try {
+        const raw = await fs.promises.readFile(filePath, "utf-8");
+        const session = JSON.parse(raw);
+        let changed = false;
+
+        // Repair lapStartSeq
+        if (session.lapStartTs) {
+          const newSeq = findSeqForTs(session.lapStartTs);
+          if (newSeq !== session.lapStartSeq) { session.lapStartSeq = newSeq; changed = true; }
+        }
+
+        // Repair each lap's startSeq/endSeq
+        if (Array.isArray(session.laps)) {
+          for (const lap of session.laps) {
+            // Estimate lap start time from session lapStartTs or previous lap
+            const lapEndTs = session.lapStartTs != null
+              ? session.createdAt + session.laps.slice(0, session.laps.indexOf(lap) + 1).reduce((s: number, l: any) => s + l.time, 0)
+              : 0;
+            const lapStartTs = lapEndTs - lap.time;
+
+            const newStart = findSeqForTs(lapStartTs);
+            const newEnd = findSeqForTs(lapEndTs);
+
+            if (newStart !== lap.startSeq || newEnd !== lap.endSeq) {
+              lap.startSeq = newStart;
+              lap.endSeq = newEnd;
+              changed = true;
+            }
+          }
+        }
+
+        if (changed) {
+          await fs.promises.writeFile(filePath, JSON.stringify(session));
+          repaired++;
+        }
+      } catch {}
+    }
+
+    console.log(`  repaired ${repaired}/${files.length} session files`);
+    return repaired;
   }
 
   async nuke(): Promise<void> {
