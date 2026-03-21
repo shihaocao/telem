@@ -597,6 +597,17 @@ async function selectLap(idx: number, forceRefresh = false) {
   const lap = session.laps[idx];
   const channels = "gps_lat,gps_lon,gps_speed,gps_heading,throttle_pos,g_force_x,g_force_y,rpm,gear,brake,coolant_temp,manifold_pressure";
   const cacheKey = `/lap/${lap.startSeq}-${lap.endSeq}`;
+
+  // Check cache before fetching — if miss, clear display so stale data doesn't linger
+  const cached = await cacheGet(cacheKey);
+  if (!cached || forceRefresh) {
+    lapTicks = []; lapCoords = []; lapSpeeds = []; lapThrottles = [];
+    lapGx = []; lapGy = []; lapRpms = []; lapGears = []; lapBrakes = []; lapTimestamps = [];
+    drawTrail();
+    seekEl.max = "0"; seekEl.value = "0";
+    updateSeek(0);
+  }
+
   const data = await apiFetch(`/wal/range?start_seq=${lap.startSeq}&end_seq=${lap.endSeq}&channels=${channels}`, "GET", undefined, forceRefresh, cacheKey);
   lapTicks = data.ticks;
 
@@ -670,7 +681,22 @@ function drawTrail() {
   }
 }
 
+function clearSeekDisplay() {
+  if (posMarker) { posMarker.remove(); posMarker = null; }
+  seekTimeEl.textContent = "--";
+  seekEpochEl.textContent = "";
+  drawGCircle(0, 0);
+  speedValueEl.textContent = "--";
+  updateGaugeSegs(speedSegTrack, 0, () => "");
+  throttleValueEl.textContent = "--";
+  updateGaugeSegs(tpsSegTrack, 0, () => "");
+  rpmValueEl.textContent = "--";
+  updateGaugeSegs(rpmSegTrack, 0, () => "");
+  brakeEl.classList.remove("active");
+}
+
 function updateSeek(idx: number) {
+  if (lapCoords.length === 0) { clearSeekDisplay(); return; }
   if (idx < 0 || idx >= lapCoords.length) return;
 
   const [lat, lon] = lapCoords[idx];

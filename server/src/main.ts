@@ -11,7 +11,7 @@ const TRACKS_DIR = resolve(__dirname, "../../tracks");
 
 const DATA_DIR = process.env.DATA_DIR ?? "./data";
 const PORT = parseInt(process.env.PORT ?? "4400", 10);
-const SNAPSHOT_THRESHOLD = parseInt(process.env.SNAPSHOT_THRESHOLD ?? "50000", 10);
+const SNAPSHOT_THRESHOLD = parseInt(process.env.SNAPSHOT_THRESHOLD ?? "5000", 10);
 const FSYNC_BATCH_SIZE = parseInt(process.env.FSYNC_BATCH_SIZE ?? "100", 10);
 
 async function main(): Promise<void> {

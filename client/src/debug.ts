@@ -269,7 +269,6 @@ function createServiceRow(name: string, status: string): ServiceState {
       <span class="svc-status" data-status="${status}"></span>
       <span class="svc-name">${name}</span>
       <span class="svc-desc">${SERVICE_DESC[name] ?? ""}</span>
-      <span class="svc-status-text">${status}</span>
       <button class="svc-btn svc-logs-btn">LOGS</button>
       <button class="svc-btn svc-restart-btn">RESTART</button>
     </div>
@@ -278,7 +277,6 @@ function createServiceRow(name: string, status: string): ServiceState {
   servicesList.appendChild(el);
 
   const statusDot = el.querySelector(".svc-status") as HTMLElement;
-  const statusText = el.querySelector(".svc-status-text") as HTMLElement;
   const logsEl = el.querySelector(".svc-logs") as HTMLElement;
   const logsBtn = el.querySelector(".svc-logs-btn") as HTMLElement;
   const restartBtn = el.querySelector(".svc-restart-btn") as HTMLElement;
@@ -326,9 +324,8 @@ function createServiceRow(name: string, status: string): ServiceState {
   });
 
   restartBtn.addEventListener("click", async () => {
-    const password = (document.getElementById("sudo-pass") as HTMLInputElement).value;
-    if (!password) { restartBtn.textContent = "NO PW"; setTimeout(() => { restartBtn.textContent = "RESTART"; }, 1500); return; }
-    if (!confirm(`Restart ${name}?`)) return;
+    const password = prompt(`Enter sudo password to restart ${name}:`);
+    if (!password) return;
     restartBtn.textContent = "...";
     try {
       await fetch(`${SERVER_URL}/services/${name}/restart`, {
@@ -350,7 +347,6 @@ function createServiceRow(name: string, status: string): ServiceState {
 function updateServiceRow(svc: ServiceState, status: string) {
   svc.status = status;
   svc.statusEl.dataset.status = status;
-  svc.el.querySelector(".svc-status-text")!.textContent = status;
 }
 
 async function refreshServices() {

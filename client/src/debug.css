@@ -122,19 +122,6 @@ h1 .jp { font-size: 9px; color: var(--text-dim); letter-spacing: 2px; }
   letter-spacing: 2px;
 }
 
-#sudo-pass {
-  background: transparent;
-  border: 1px solid var(--border-bright);
-  color: var(--text-bright);
-  font-family: var(--font);
-  font-size: 9px;
-  padding: 3px 8px;
-  width: 140px;
-  margin-left: 12px;
-}
-
-#sudo-pass:focus { outline: 1px solid var(--accent-dim); }
-
 #services-list {
   display: flex;
   flex-direction: column;
@@ -179,24 +166,16 @@ h1 .jp { font-size: 9px; color: var(--text-dim); letter-spacing: 2px; }
 }
 
 .svc-name {
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--text-bright);
   letter-spacing: 1px;
-  flex: 1;
 }
 
 .svc-desc {
-  font-size: 8px;
+  font-size: 11px;
   color: var(--text-dim);
-  flex: 1;
-}
-
-.svc-status-text {
-  font-size: 9px;
-  color: var(--text-dim);
-  letter-spacing: 1px;
-  min-width: 60px;
+  margin-right: auto;
 }
 
 .svc-btn {
@@ -204,10 +183,10 @@ h1 .jp { font-size: 9px; color: var(--text-dim); letter-spacing: 2px; }
   border: 1px solid var(--border-bright);
   color: var(--text);
   font-family: var(--font);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 1px;
-  padding: 2px 8px;
+  padding: 3px 10px;
   cursor: pointer;
 }
 
@@ -228,7 +207,7 @@ h1 .jp { font-size: 9px; color: var(--text-dim); letter-spacing: 2px; }
 }
 
 .svc-cam-val {
-  font-size: 8px;
+  font-size: 10px;
   color: var(--text);
   font-variant-numeric: tabular-nums;
   min-width: 90px;

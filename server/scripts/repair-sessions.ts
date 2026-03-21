@@ -18,7 +18,7 @@ const DATA_DIR = arg("data-dir", "./data");
 async function main() {
   const wal = new WalEngine({
     dataDir: DATA_DIR,
-    snapshotThreshold: 50_000,
+    snapshotThreshold: 5_000,
     fsyncBatchSize: 100,
   });
 

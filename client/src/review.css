@@ -112,7 +112,7 @@
 #review-sidebar.syncing {
   border-right-color: transparent;
   background-image: linear-gradient(var(--panel-bg), var(--panel-bg)),
-    linear-gradient(to bottom, transparent var(--sweep-pos, 0%), rgba(255,123,69,0.5) calc(var(--sweep-pos, 0%) + 25%), transparent calc(var(--sweep-pos, 0%) + 50%));
+    linear-gradient(to bottom, transparent var(--sweep-pos, 0%), rgba(255,123,69,0.85) calc(var(--sweep-pos, 0%) + 25%), transparent calc(var(--sweep-pos, 0%) + 50%));
   background-clip: padding-box, border-box;
   background-origin: padding-box, border-box;
   border-right: 2px solid transparent;
