@@ -15,21 +15,11 @@ export interface WalConfig {
   fsyncBatchSize: number;
 }
 
-interface Snapshot {
-  seq: number;
-  generation: number;
-}
-
 const WAL_DIR = "wal";
-const SNAP_DIR = "snapshots";
 const MAX_CHANNEL_ENTRIES = 6000;
 
 function walFileName(gen: number): string {
   return `wal.${String(gen).padStart(6, "0")}.log`;
-}
-
-function snapFileName(seq: number): string {
-  return `snap.${String(seq).padStart(12, "0")}.json`;
 }
 
 export class WalEngine extends EventEmitter {
@@ -44,44 +34,43 @@ export class WalEngine extends EventEmitter {
   private byChannel = new Map<string, WalEntry[]>();
 
   private walDir: string;
-  private snapDir: string;
   private snapshotting = false;
 
   constructor(config: WalConfig) {
     super();
     this.config = config;
     this.walDir = path.join(config.dataDir, WAL_DIR);
-    this.snapDir = path.join(config.dataDir, SNAP_DIR);
   }
 
   async init(): Promise<void> {
     await fs.promises.mkdir(this.walDir, { recursive: true });
-    await fs.promises.mkdir(this.snapDir, { recursive: true });
 
     // Clean up partial compaction if interrupted
     const tmpDir = path.join(this.walDir, "_compact_tmp");
     try { await fs.promises.rm(tmpDir, { recursive: true, force: true }); } catch {}
 
-    const snap = await this.loadLatestSnapshot();
-    if (snap) {
-      this.seq = snap.seq;
-      this.generation = snap.generation;
-    }
+    // Clean up legacy snapshots directory if it exists
+    const snapDir = path.join(this.config.dataDir, "snapshots");
+    try { await fs.promises.rm(snapDir, { recursive: true, force: true }); } catch {}
 
     await this.fastReplay();
     this.openGeneration(this.generation);
   }
 
-  private async loadLatestSnapshot(): Promise<Snapshot | null> {
-    const files = (await fs.promises.readdir(this.snapDir)).filter((f) => f.startsWith("snap.")).sort();
-    if (files.length === 0) return null;
-    const content = await fs.promises.readFile(path.join(this.snapDir, files[files.length - 1]), "utf-8");
-    return JSON.parse(content) as Snapshot;
-  }
-
+  /**
+   * Scan WAL files to find max seq, determine generation, and populate byChannel.
+   * Generation = number extracted from the last WAL filename.
+   */
   private async fastReplay(): Promise<void> {
     const files = (await fs.promises.readdir(this.walDir)).filter((f) => f.startsWith("wal.")).sort();
     let totalLines = 0;
+
+    // Determine generation from last WAL file
+    if (files.length > 0) {
+      const lastFile = files[files.length - 1];
+      const match = lastFile.match(/wal\.(\d+)\.log/);
+      if (match) this.generation = parseInt(match[1], 10);
+    }
 
     for (const file of files) {
       const content = await fs.promises.readFile(path.join(this.walDir, file), "utf-8");
@@ -102,6 +91,7 @@ export class WalEngine extends EventEmitter {
 
     this.entryCount = totalLines;
 
+    // Count entries in current generation for rotation threshold
     const currentFile = path.join(this.walDir, walFileName(this.generation));
     try {
       const content = await fs.promises.readFile(currentFile, "utf-8");
@@ -143,7 +133,7 @@ export class WalEngine extends EventEmitter {
     this.emit("entry", entry);
 
     if (this.entriesInGeneration >= this.config.snapshotThreshold && !this.snapshotting) {
-      this.triggerSnapshot();
+      this.rotateGeneration();
     }
 
     return entry;
@@ -173,7 +163,7 @@ export class WalEngine extends EventEmitter {
     for (const entry of entries) this.emit("entry", entry);
 
     if (this.entriesInGeneration >= this.config.snapshotThreshold && !this.snapshotting) {
-      this.triggerSnapshot();
+      this.rotateGeneration();
     }
 
     return entries;
@@ -186,20 +176,10 @@ export class WalEngine extends EventEmitter {
     if (arr.length > MAX_CHANNEL_ENTRIES) arr.shift();
   }
 
-  private triggerSnapshot(): void {
+  private rotateGeneration(): void {
     this.snapshotting = true;
     fs.fsyncSync(this.fd!);
     this.pendingWrites = 0;
-
-    const snap: Snapshot = { seq: this.seq, generation: this.generation + 1 };
-    const snapFile = path.join(this.snapDir, snapFileName(snap.seq));
-    const tmpFile = snapFile + ".tmp";
-    const tmpFd = fs.openSync(tmpFile, "w");
-    fs.writeSync(tmpFd, JSON.stringify(snap));
-    fs.fsyncSync(tmpFd);
-    fs.closeSync(tmpFd);
-    fs.renameSync(tmpFile, snapFile);
-
     this.openGeneration(this.generation + 1);
     this.entriesInGeneration = 0;
     this.snapshotting = false;
@@ -285,26 +265,23 @@ export class WalEngine extends EventEmitter {
     return result;
   }
 
-  /** Read #range:min,max footer from WAL file */
+  /** Read #range:min,max footer from last ~200 bytes of a WAL file */
   private async readFileRange(filePath: string): Promise<{ minSeq: number; maxSeq: number } | null> {
     try {
-      // Read just the last ~200 bytes for the footer
       const stat = await fs.promises.stat(filePath);
-      const size = stat.size;
-      if (size === 0) return null;
-      const readSize = Math.min(200, size);
+      if (stat.size === 0) return null;
+      const readSize = Math.min(200, stat.size);
       const buf = Buffer.alloc(readSize);
       const fh = await fs.promises.open(filePath, "r");
-      await fh.read(buf, 0, readSize, size - readSize);
+      await fh.read(buf, 0, readSize, stat.size - readSize);
       await fh.close();
       const tail = buf.toString("utf-8");
-      const lines = tail.split("\n");
-      for (let i = lines.length - 1; i >= 0; i--) {
-        if (lines[i].startsWith("#range:")) {
-          const parts = lines[i].slice(7).split(",");
+      for (const line of tail.split("\n").reverse()) {
+        if (line.startsWith("#range:")) {
+          const parts = line.slice(7).split(",");
           return { minSeq: parseInt(parts[0], 10), maxSeq: parseInt(parts[1], 10) };
         }
-        if (lines[i].length > 0 && !lines[i].startsWith("#")) break;
+        if (line.length > 0 && !line.startsWith("#")) break;
       }
     } catch {}
     return null;
@@ -328,6 +305,10 @@ export class WalEngine extends EventEmitter {
 
   async compact(): Promise<{ oldFiles: number; oldEntries: number; newEntries: number; newSeq: number }> {
     this.close();
+
+    // Clean up legacy snapshots
+    const snapDir = path.join(this.config.dataDir, "snapshots");
+    try { await fs.promises.rm(snapDir, { recursive: true, force: true }); } catch {}
 
     const files = (await fs.promises.readdir(this.walDir)).filter((f) => f.startsWith("wal.")).sort();
     const oldFileCount = files.length;
@@ -390,14 +371,6 @@ export class WalEngine extends EventEmitter {
     }
     await fs.promises.rmdir(tmpDir);
 
-    // Snapshots
-    const snaps = (await fs.promises.readdir(this.snapDir)).filter((f) => f.startsWith("snap."));
-    for (const file of snaps) await fs.promises.unlink(path.join(this.snapDir, file));
-    await fs.promises.writeFile(
-      path.join(this.snapDir, snapFileName(newSeq)),
-      JSON.stringify({ seq: newSeq, generation: gen } as Snapshot),
-    );
-
     // Re-init
     this.byChannel.clear();
     this.seq = 0;
@@ -412,7 +385,6 @@ export class WalEngine extends EventEmitter {
   async nuke(): Promise<void> {
     this.close();
     await fs.promises.rm(this.walDir, { recursive: true, force: true });
-    await fs.promises.rm(this.snapDir, { recursive: true, force: true });
     this.byChannel.clear();
     this.seq = 0;
     this.generation = 1;

@@ -176,25 +176,18 @@ describe("WalEngine", () => {
     });
   });
 
-  describe("snapshots", () => {
-    it("triggers snapshot at threshold and rotates WAL generation", async () => {
+  describe("generation rotation", () => {
+    it("rotates WAL generation at threshold", async () => {
       const smallWal = new WalEngine({ dataDir: tmpDir(), snapshotThreshold: 5, fsyncBatchSize: 100 });
       const smallDir = (smallWal as any).config.dataDir;
       await smallWal.init();
 
-      // append 6 entries — should trigger snapshot after 5th
       for (let i = 0; i < 6; i++) {
         smallWal.append("ch", i);
       }
 
       expect(smallWal.currentGeneration).toBe(2);
 
-      // snapshot file should exist
-      const snaps = fs.readdirSync(path.join(smallDir, "snapshots"));
-      expect(snaps.length).toBeGreaterThanOrEqual(1);
-      expect(snaps[0]).toMatch(/^snap\./);
-
-      // WAL gen 2 should exist
       const walFiles = fs.readdirSync(path.join(smallDir, "wal")).sort();
       expect(walFiles).toContain("wal.000001.log");
       expect(walFiles).toContain("wal.000002.log");
@@ -312,7 +305,7 @@ describe("WalEngine", () => {
       expect(wal.totalEntries).toBe(1);
     });
 
-    it("removes WAL and snapshot files", async () => {
+    it("removes WAL files", async () => {
       wal.append("speed", 100);
       wal.close();
 
@@ -323,8 +316,6 @@ describe("WalEngine", () => {
       await wal.init();
       await wal.nuke();
 
-      const walFilesAfter = fs.readdirSync(path.join(dataDir, "wal"));
-      const snapFilesAfter = fs.readdirSync(path.join(dataDir, "snapshots"));
       // fresh WAL file created by init, but no old data
       expect(wal.totalEntries).toBe(0);
     });
