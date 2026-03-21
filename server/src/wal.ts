@@ -436,6 +436,10 @@ export class WalEngine extends EventEmitter {
     const files = (await fs.promises.readdir(sessionsDir)).filter((f) => f.endsWith(".json"));
     let repaired = 0;
 
+    const walMinTs = tsIndex[0][0];
+    const walMaxTs = tsIndex[tsIndex.length - 1][0];
+    console.log(`  WAL ts range: ${walMinTs} - ${walMaxTs} (${tsIndex.length} ticks)`);
+
     for (const file of files) {
       const filePath = path.join(sessionsDir, file);
       try {
@@ -443,9 +447,13 @@ export class WalEngine extends EventEmitter {
         const session = JSON.parse(raw);
         let changed = false;
 
+        console.log(`  session ${session.driver || file}: createdAt=${session.createdAt} lapStartTs=${session.lapStartTs} laps=${session.laps?.length ?? 0}`);
+        console.log(`    createdAt in WAL range: ${session.createdAt >= walMinTs && session.createdAt <= walMaxTs}`);
+
         // Repair lapStartSeq
         if (session.lapStartTs) {
           const newSeq = findSeqForTs(session.lapStartTs);
+          console.log(`    lapStartSeq: ${session.lapStartSeq} → ${newSeq}`);
           if (newSeq !== session.lapStartSeq) { session.lapStartSeq = newSeq; changed = true; }
         }
 
@@ -456,6 +464,7 @@ export class WalEngine extends EventEmitter {
             const lapEnd = lapStart + lap.time;
             const newStart = findSeqForTs(lapStart);
             const newEnd = findSeqForTs(lapEnd);
+            console.log(`    lap ${lap.lap}: ts ${lapStart}-${lapEnd} seq ${lap.startSeq}-${lap.endSeq} → ${newStart}-${newEnd}`);
             if (newStart !== lap.startSeq || newEnd !== lap.endSeq) {
               lap.startSeq = newStart;
               lap.endSeq = newEnd;
@@ -468,9 +477,13 @@ export class WalEngine extends EventEmitter {
         if (changed) {
           await fs.promises.writeFile(filePath, JSON.stringify(session));
           repaired++;
-          console.log(`  fixed: ${session.driver || session.id} (${session.laps?.length ?? 0} laps)`);
+          console.log(`    → FIXED`);
+        } else {
+          console.log(`    → no change needed`);
         }
-      } catch {}
+      } catch (err) {
+        console.log(`    → ERROR: ${err}`);
+      }
     }
 
     console.log(`  repaired ${repaired}/${files.length} session files`);
