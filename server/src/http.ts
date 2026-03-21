@@ -2,6 +2,7 @@ import * as http from "node:http";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { execSync } from "node:child_process";
+import { pack } from "msgpackr";
 import { WalEngine, WalEntry } from "./wal.js";
 import { SessionStore, type Lap } from "./sessions.js";
 import { LapDetector, type LapEvent } from "./lap-detector.js";
@@ -182,14 +183,16 @@ async function handleWalRange(url: URL, res: http.ServerResponse, wal: WalEngine
     json(res, 400, { error: "start_seq and end_seq are required" });
     return;
   }
-  // Stream NDJSON — pipes raw WAL lines directly, zero serialization
-  cors(res);
-  res.writeHead(200, { "Content-Type": "application/x-ndjson" });
+  // Collect ticks and respond as msgpack — ~40% smaller than JSON, faster to encode
+  const ticks: Array<{ seq: number; ts: number; d: Record<string, unknown> }> = [];
   await wal.streamTicksInRange(startSeq, endSeq, (line) => {
-    res.write(line);
-    res.write("\n");
+    try {
+      ticks.push(JSON.parse(line));
+    } catch {}
   });
-  res.end();
+  cors(res);
+  res.writeHead(200, { "Content-Type": "application/x-msgpack" });
+  res.end(pack(ticks));
 }
 
 // --- Session SSE stream ---

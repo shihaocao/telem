@@ -3,6 +3,7 @@ import { TelemetryManager } from "./telemetry";
 import { getActiveTrack } from "./track";
 import { trackProgress } from "./track-utils";
 import { formatTime, getBestLapTime } from "./format";
+import { unpack } from "@msgpack/msgpack";
 
 interface Lap {
   lap: number;
@@ -76,9 +77,8 @@ async function loadBestCurve(): Promise<void> {
 
   try {
     const res = await fetch(`${serverUrl}/wal/range?start_seq=${best.startSeq}&end_seq=${best.endSeq}`);
-    const text = await res.text();
-    const ticks: { ts: number; d: Record<string, number> }[] =
-      text.split("\n").filter((l) => l.length > 0).map((l) => JSON.parse(l));
+    const buf = await res.arrayBuffer();
+    const ticks = unpack(new Uint8Array(buf)) as Array<{ ts: number; d: Record<string, number> }>;
 
     bestCurve = [];
     const startTs = ticks[0]?.ts ?? 0;

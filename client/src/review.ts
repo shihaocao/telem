@@ -8,6 +8,7 @@ import { speedToColor, throttleToColor, rpmToColor } from "./track-utils";
 import { createDropdown } from "./dropdown";
 import { formatTime, formatDate, getBestLapTime } from "./format";
 import { SERVER_URL } from "./server-url";
+import { unpack } from "@msgpack/msgpack";
 
 const TILES_NOLABELS = "https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png";
 const TILES_SAT = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
@@ -408,7 +409,7 @@ async function apiFetch(path: string, method = "GET", body?: unknown, skipCache 
   return fetchRemote(path, method, body, key);
 }
 
-/** Fetch NDJSON from /wal/range, parse into ticks array. Caches parsed result. */
+/** Fetch msgpack from /wal/range, decode into ticks array. Caches parsed result. */
 async function fetchWalRange(
   startSeq: number, endSeq: number, _channels: string,
   cacheKey: string, forceRefresh: boolean,
@@ -428,11 +429,10 @@ async function fetchWalRangeRemote(
   setStatus("LOADING...", "loading");
   try {
     const res = await fetch(`${SERVER_URL}/wal/range?start_seq=${startSeq}&end_seq=${endSeq}`);
-    const text = await res.text();
-    const ticks = text.split("\n").filter((l) => l.length > 0).map((l) => JSON.parse(l));
+    const buf = await res.arrayBuffer();
+    const ticks = unpack(new Uint8Array(buf)) as any[];
     const data = { ticks };
     await cacheSet(cacheKey, data);
-    setStatus("SYNCED");
     return data;
   } catch {
     const cached = await cacheGet<{ ticks: any[] }>(cacheKey);
@@ -671,6 +671,7 @@ async function selectLap(idx: number, forceRefresh = false) {
   seekEl.max = String(Math.max(0, lapCoords.length - 1));
   seekEl.value = seekEl.max;
   updateSeek(lapCoords.length - 1);
+  setStatus("SYNCED");
 }
 
 function drawTrail() {
