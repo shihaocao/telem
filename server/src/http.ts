@@ -62,6 +62,13 @@ export function createServer(wal: WalEngine, sessions: SessionStore, lapDetector
         return;
       }
 
+      // Guard WAL-dependent routes during compaction
+      const walRoutes = ["/ingest", "/stream", "/query", "/wal/range", "/nuke"];
+      if (wal.compacting && walRoutes.some((r) => pathname === r || pathname.startsWith(r))) {
+        json(res, 503, { error: "compaction in progress, retry shortly" });
+        return;
+      }
+
       if (req.method === "POST" && pathname === "/ingest") {
         await handleIngest(req, res, wal);
       } else if (req.method === "GET" && pathname === "/stream") {

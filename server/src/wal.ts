@@ -96,6 +96,7 @@ export class WalEngine extends EventEmitter {
 
   private walDir: string;
   private snapshotting = false;
+  private _compacting = false;
   private fileRanges: FileRange[] = [];
 
   constructor(config: WalConfig) {
@@ -357,16 +358,19 @@ export class WalEngine extends EventEmitter {
   get currentSeq(): number { return this.seq; }
   get currentGeneration(): number { return this.generation; }
   get totalEntries(): number { return this.entryCount; }
+  get compacting(): boolean { return this._compacting; }
 
   // ── Maintenance ──
 
   async compact(): Promise<{ oldFiles: number; oldEntries: number; newEntries: number; newSeq: number; sessionsRepaired: number }> {
+    this._compacting = true;
     this.close(); // releases existing lock
     await this.acquireLock(`compact pid ${process.pid}`);
 
     try {
       return await this._compact();
     } finally {
+      this._compacting = false;
       this.releaseLock();
     }
   }
