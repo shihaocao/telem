@@ -8,7 +8,7 @@ import { speedToColor, throttleToColor, rpmToColor } from "./track-utils";
 import { createDropdown } from "./dropdown";
 import { formatTime, formatDate, getBestLapTime } from "./format";
 import { SERVER_URL } from "./server-url";
-import { unpack } from "@msgpack/msgpack";
+import { unpack } from "msgpackr/unpack";
 
 const TILES_NOLABELS = "https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png";
 const TILES_SAT = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";

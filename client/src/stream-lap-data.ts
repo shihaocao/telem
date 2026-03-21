@@ -3,7 +3,7 @@ import { TelemetryManager } from "./telemetry";
 import { getActiveTrack } from "./track";
 import { trackProgress } from "./track-utils";
 import { formatTime, getBestLapTime } from "./format";
-import { unpack } from "@msgpack/msgpack";
+import { unpack } from "msgpackr/unpack";
 
 interface Lap {
   lap: number;
