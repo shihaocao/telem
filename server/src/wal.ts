@@ -434,6 +434,35 @@ export class WalEngine extends EventEmitter {
       if (writeBuf.length > 0) { await fh.write(writeBuf); writeBuf = ""; }
     }
 
+    // Accumulator for merging same-ts lines into one compact tick
+    let pendingD: Record<string, unknown> = {};
+    let pendingTs = -1;
+    let pendingSeq = 0;
+
+    const writeTick = async () => {
+      if (pendingTs < 0) return;
+      const compactLine: WalLine = { seq: pendingSeq, ts: pendingTs, d: pendingD };
+      writeBuf += JSON.stringify(compactLine) + "\n";
+
+      if (pendingSeq < fileMinSeq) fileMinSeq = pendingSeq;
+      if (pendingSeq > fileMaxSeq) fileMaxSeq = pendingSeq;
+      lineCount++;
+
+      if (writeBuf.length >= WRITE_BUF_SIZE) await flushBuf();
+
+      if (lineCount >= maxPerFile) {
+        await flushBuf();
+        await fh.write(`#range:${fileMinSeq},${fileMaxSeq}\n`);
+        await fh.sync();
+        await fh.close();
+        gen++;
+        fh = await fs.promises.open(path.join(tmpDir, walFileName(gen)), "w");
+        lineCount = 0;
+        fileMinSeq = Infinity;
+        fileMaxSeq = -1;
+      }
+    };
+
     let lastLog = Date.now();
     for (let fi = 0; fi < files.length; fi++) {
       const file = files[fi];
@@ -450,36 +479,26 @@ export class WalEngine extends EventEmitter {
 
         const oldSeq = entries[0].seq;
         const ts = entries[0].ts;
-        if (ts !== lastTs) { newSeq++; lastTs = ts; }
+
+        if (ts !== pendingTs) {
+          // Flush previous tick
+          await writeTick();
+          newSeq++;
+          pendingTs = ts;
+          pendingSeq = newSeq;
+          pendingD = {};
+        }
+
         tsToSeq.set(ts, newSeq);
         oldToNewSeq.set(oldSeq, newSeq);
 
-        // Write as compact multi-channel format
-        const d: Record<string, unknown> = {};
-        for (const e of entries) d[e.channel] = e.value;
-        const compactLine: WalLine = { seq: newSeq, ts, d };
-        writeBuf += JSON.stringify(compactLine) + "\n";
+        // Merge channels into current tick
+        for (const e of entries) pendingD[e.channel] = e.value;
         newEntryCount += entries.length;
-
-        if (newSeq < fileMinSeq) fileMinSeq = newSeq;
-        if (newSeq > fileMaxSeq) fileMaxSeq = newSeq;
-        lineCount++;
-
-        if (writeBuf.length >= WRITE_BUF_SIZE) await flushBuf();
-
-        if (lineCount >= maxPerFile) {
-          await flushBuf();
-          await fh.write(`#range:${fileMinSeq},${fileMaxSeq}\n`);
-          await fh.sync();
-          await fh.close();
-          gen++;
-          fh = await fs.promises.open(path.join(tmpDir, walFileName(gen)), "w");
-          lineCount = 0;
-          fileMinSeq = Infinity;
-          fileMaxSeq = -1;
-        }
       }
     }
+    // Flush final tick
+    await writeTick();
 
     await flushBuf();
     if (fileMaxSeq >= 0) await fh.write(`#range:${fileMinSeq},${fileMaxSeq}\n`);
