@@ -215,10 +215,10 @@ function connect(): void {
     scheduleLatencyUpdate();
   });
 
-  es.addEventListener("caught_up", () => {
+  es.onopen = () => {
     statusEl.textContent = "LIVE";
     statusEl.className = "live";
-  });
+  };
 
   es.onerror = () => {
     es.close();

@@ -77,11 +77,11 @@ export class TelemetryManager {
       this.ingest(entry);
     });
 
-    es.addEventListener("caught_up", () => {
+    es.onopen = () => {
       this.setState("live");
       this.retryDelay = 1000;
       this.resetStaleTimer();
-    });
+    };
 
     es.onerror = () => {
       this.cleanup();

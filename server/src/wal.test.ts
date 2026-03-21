@@ -41,15 +41,14 @@ describe("WalEngine", () => {
       expect(b.ts).toBeLessThanOrEqual(Date.now());
     });
 
-    it("stores value of any type", async () => {
-      const [a] = wal.append({ channel: "gps", value: { lat: 37.7, lon: -122.4 } });
-      const [b] = wal.append({ channel: "flag", value: true });
-      const [c] = wal.append({ channel: "label", value: "pit-in" });
+    it("stores value of any type", () => {
+      wal.append({ channel: "gps", value: { lat: 37.7, lon: -122.4 } });
+      wal.append({ channel: "flag", value: true });
+      wal.append({ channel: "label", value: "pit-in" });
 
-      const entries = await wal.getEntriesAfterSeq(0);
-      expect(entries[0].value).toEqual({ lat: 37.7, lon: -122.4 });
-      expect(entries[1].value).toBe(true);
-      expect(entries[2].value).toBe("pit-in");
+      expect(wal.queryByChannel("gps")[0].value).toEqual({ lat: 37.7, lon: -122.4 });
+      expect(wal.queryByChannel("flag")[0].value).toBe(true);
+      expect(wal.queryByChannel("label")[0].value).toBe("pit-in");
     });
 
     it("emits entry event on append", () => {
@@ -123,24 +122,23 @@ describe("WalEngine", () => {
   });
 
   describe("recovery", () => {
-    it("replays WAL entries on restart", async () => {
+    it("recovers seq on restart", async () => {
       wal.append({ channel: "speed", value: 100 });
       wal.append({ channel: "rpm", value: 8000 });
       wal.append({ channel: "speed", value: 110 });
       wal.close();
 
-      // create new engine on same data dir
       const wal2 = new WalEngine({ dataDir, snapshotThreshold: 50_000, fsyncBatchSize: 10 });
       await wal2.init();
 
       expect(wal2.currentSeq).toBe(3);
-      expect(wal2.totalEntries).toBe(3);
-      expect(wal2.getChannels().sort()).toEqual(["rpm", "speed"]);
 
-      const speeds = wal2.queryByChannel("speed");
-      expect(speeds).toHaveLength(2);
-      expect(speeds[0].value).toBe(100);
-      expect(speeds[1].value).toBe(110);
+      // Data is on disk, queryable via getTicksInRange
+      const ticks = await wal2.getTicksInRange(1, 3);
+      expect(ticks).toHaveLength(3);
+
+      // byChannel is empty on cold start (no replay)
+      expect(wal2.getChannels()).toEqual([]);
 
       wal2.close();
     });
@@ -164,13 +162,12 @@ describe("WalEngine", () => {
       // inject corrupt line
       const walFile = path.join(dataDir, "wal", "wal.000001.log");
       fs.appendFileSync(walFile, "NOT VALID JSON\n");
-      fs.appendFileSync(walFile, JSON.stringify({ seq: 2, ts: Date.now(), channel: "rpm", value: 5000 }) + "\n");
+      fs.appendFileSync(walFile, JSON.stringify({ seq: 2, ts: Date.now(), d: { rpm: 5000 } }) + "\n");
 
       const wal2 = new WalEngine({ dataDir, snapshotThreshold: 50_000, fsyncBatchSize: 10 });
       await wal2.init();
 
       expect(wal2.currentSeq).toBe(2);
-      expect(wal2.totalEntries).toBe(2);
       wal2.close();
     });
   });
@@ -211,10 +208,9 @@ describe("WalEngine", () => {
       await w2.init();
 
       expect(w2.currentSeq).toBe(5);
-      expect(w2.totalEntries).toBe(5);
 
-      const all = await w2.getEntriesAfterSeq(0);
-      expect(all.map((e) => e.value)).toEqual([10, 20, 30, 40, 50]);
+      const ticks = await w2.getTicksInRange(1, 5);
+      expect(ticks).toHaveLength(5);
 
       w2.close();
       fs.rmSync(dir, { recursive: true, force: true });
@@ -267,17 +263,17 @@ describe("WalEngine", () => {
       expect(wal.queryByChannel("nonexistent")).toEqual([]);
     });
 
-    it("getEntriesAfterSeq returns entries across channels", async () => {
-      const results = await wal.getEntriesAfterSeq(4);
-      expect(results).toHaveLength(2);
-      expect(results[0].seq).toBe(5);
-      expect(results[1].seq).toBe(6);
+    it("getTicksInRange returns ticks in seq range", async () => {
+      const ticks = await wal.getTicksInRange(2, 4);
+      expect(ticks).toHaveLength(3);
+      expect(ticks[0].seq).toBe(2);
+      expect(ticks[2].seq).toBe(4);
     });
 
-    it("getEntriesAfterSeq filters by channel set", async () => {
-      const results = await wal.getEntriesAfterSeq(0, new Set(["rpm"]));
-      expect(results).toHaveLength(2);
-      expect(results.every((e) => e.channel === "rpm")).toBe(true);
+    it("getTicksInRange filters by channel", async () => {
+      const ticks = await wal.getTicksInRange(1, 6, new Set(["rpm"]));
+      expect(ticks.length).toBeGreaterThan(0);
+      for (const t of ticks) expect("rpm" in t.d).toBe(true);
     });
   });
 

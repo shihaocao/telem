@@ -65,7 +65,7 @@ export function createServer(wal: WalEngine, sessions: SessionStore, lapDetector
       if (req.method === "POST" && pathname === "/ingest") {
         await handleIngest(req, res, wal);
       } else if (req.method === "GET" && pathname === "/stream") {
-        await handleStream(url, req, res, wal);
+        handleStream(url, req, res, wal);
       } else if (req.method === "GET" && pathname === "/query") {
         handleQuery(url, res, wal);
       } else if (req.method === "GET" && pathname === "/wal/range") {
@@ -141,7 +141,7 @@ async function handleIngest(
   json(res, 200, { seq: entries[0].seq, count: entries.length });
 }
 
-async function handleStream(url: URL, req: http.IncomingMessage, res: http.ServerResponse, wal: WalEngine): Promise<void> {
+function handleStream(url: URL, req: http.IncomingMessage, res: http.ServerResponse, wal: WalEngine): void {
   cors(res);
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
@@ -151,22 +151,10 @@ async function handleStream(url: URL, req: http.IncomingMessage, res: http.Serve
 
   const channelsParam = url.searchParams.get("channels");
   const channelFilter = channelsParam ? new Set(channelsParam.split(",")) : null;
-  const afterSeq = parseInt(url.searchParams.get("after_seq") ?? "0", 10) || 0;
-  const skipHistory = url.searchParams.get("history") === "false";
 
   function sendEvent(name: string, data: unknown): void {
     res.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
   }
-
-  // replay historical entries
-  if (!skipHistory && afterSeq >= 0) {
-    const historical = await wal.getEntriesAfterSeq(afterSeq, channelFilter ?? undefined);
-    for (const entry of historical) {
-      sendEvent("entry", entry);
-    }
-  }
-
-  sendEvent("caught_up", { seq: wal.currentSeq });
 
   // live tail
   const onEntry = (entry: WalEntry): void => {

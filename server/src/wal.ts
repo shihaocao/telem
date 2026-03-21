@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-/** Single-channel entry — used for per-channel indexing, SSE events, emit */
+/** Per-channel entry — used internally for channel ring buffers + SSE events */
 export interface WalEntry {
   seq: number;
   ts: number;
@@ -10,7 +10,7 @@ export interface WalEntry {
   value: unknown;
 }
 
-/** Batched tick — one per timestamp, all channels merged. Matches disk format. */
+/** Primary format — one tick per ingest, all channels merged. Matches disk format. */
 export interface WalTick {
   seq: number;
   ts: number;
@@ -105,42 +105,29 @@ export class WalEngine extends EventEmitter {
     const snapDir = path.join(this.config.dataDir, "snapshots");
     try { await fs.promises.rm(snapDir, { recursive: true, force: true }); } catch {}
 
-    await this.fastReplay();
+    await this.findSeqAndGeneration();
     this.openGeneration(this.generation);
   }
 
-  private async fastReplay(): Promise<void> {
+  /** Fast startup: find generation from filenames, max seq from last file only */
+  private async findSeqAndGeneration(): Promise<void> {
     const files = (await fs.promises.readdir(this.walDir)).filter((f) => f.startsWith("wal.")).sort();
-    let totalLines = 0;
+    if (files.length === 0) return;
 
-    if (files.length > 0) {
-      const match = files[files.length - 1].match(/wal\.(\d+)\.log/);
-      if (match) this.generation = parseInt(match[1], 10);
+    const match = files[files.length - 1].match(/wal\.(\d+)\.log/);
+    if (match) this.generation = parseInt(match[1], 10);
+
+    // Only scan last file for max seq
+    const lastFile = path.join(this.walDir, files[files.length - 1]);
+    const content = await fs.promises.readFile(lastFile, "utf-8");
+    let lineCount = 0;
+    for (const raw of content.split("\n")) {
+      if (raw.length === 0 || raw.startsWith("#")) continue;
+      lineCount++;
+      const tick = parseTickLine(raw);
+      if (tick && tick.seq > this.seq) this.seq = tick.seq;
     }
-
-    for (const file of files) {
-      const content = await fs.promises.readFile(path.join(this.walDir, file), "utf-8");
-      for (const raw of content.split("\n")) {
-        const entries = parseLine(raw);
-        for (const entry of entries) {
-          if (entry.seq > this.seq) this.seq = entry.seq;
-          totalLines++;
-
-          let arr = this.byChannel.get(entry.channel);
-          if (!arr) { arr = []; this.byChannel.set(entry.channel, arr); }
-          arr.push(entry);
-          if (arr.length > MAX_CHANNEL_ENTRIES) arr.shift();
-        }
-      }
-    }
-
-    this.entryCount = totalLines;
-
-    const currentFile = path.join(this.walDir, walFileName(this.generation));
-    try {
-      const content = await fs.promises.readFile(currentFile, "utf-8");
-      this.entriesInGeneration = content.split("\n").filter((l) => l.length > 0 && !l.startsWith("#")).length;
-    } catch {}
+    this.entriesInGeneration = lineCount;
   }
 
   // ── Write path (sync for durability) ──
@@ -241,34 +228,6 @@ export class WalEngine extends EventEmitter {
     return result;
   }
 
-  async getEntriesInRange(startSeq: number, endSeq: number, channels?: Set<string>): Promise<WalEntry[]> {
-    const result: WalEntry[] = [];
-    const files = (await fs.promises.readdir(this.walDir)).filter((f) => f.startsWith("wal.")).sort();
-
-    for (const file of files) {
-      const filePath = path.join(this.walDir, file);
-      const range = await this.readFileRange(filePath);
-      if (range) {
-        if (range.maxSeq < startSeq) continue;
-        if (range.minSeq > endSeq) break;
-      }
-
-      const content = await fs.promises.readFile(filePath, "utf-8");
-      for (const raw of content.split("\n")) {
-        const entries = parseLine(raw);
-        if (entries.length === 0) continue;
-        const seq = entries[0].seq;
-        if (seq < startSeq) continue;
-        if (seq > endSeq) return result;
-        for (const e of entries) {
-          if (channels && !channels.has(e.channel)) continue;
-          result.push(e);
-        }
-      }
-    }
-    return result;
-  }
-
   /** Return batched ticks in range — no per-channel explosion, fast for bulk replay */
   async getTicksInRange(startSeq: number, endSeq: number, channels?: Set<string>): Promise<WalTick[]> {
     const result: WalTick[] = [];
@@ -305,28 +264,6 @@ export class WalEngine extends EventEmitter {
     return result;
   }
 
-  async getEntriesAfterSeq(afterSeq: number, channels?: Set<string>): Promise<WalEntry[]> {
-    const result: WalEntry[] = [];
-    const files = (await fs.promises.readdir(this.walDir)).filter((f) => f.startsWith("wal.")).sort();
-
-    for (const file of files) {
-      const filePath = path.join(this.walDir, file);
-      const range = await this.readFileRange(filePath);
-      if (range && range.maxSeq <= afterSeq) continue;
-
-      const content = await fs.promises.readFile(filePath, "utf-8");
-      for (const raw of content.split("\n")) {
-        const entries = parseLine(raw);
-        if (entries.length === 0) continue;
-        if (entries[0].seq <= afterSeq) continue;
-        for (const e of entries) {
-          if (channels && !channels.has(e.channel)) continue;
-          result.push(e);
-        }
-      }
-    }
-    return result;
-  }
 
   private async readFileRange(filePath: string): Promise<{ minSeq: number; maxSeq: number } | null> {
     try {

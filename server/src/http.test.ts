@@ -252,54 +252,32 @@ describe("HTTP server", () => {
   });
 
   describe("GET /stream (SSE)", () => {
-    it("replays history and sends caught_up", async () => {
-      const events = await sseRequest(port, "/stream?channels=speed&after_seq=0", 50);
+    it("receives live events", async () => {
+      const eventPromise = sseRequest(port, "/stream?channels=live_test", 2, 2000);
 
-      const caughtUp = events.find((e) => e.event === "caught_up");
-      expect(caughtUp).toBeDefined();
-
-      const entries = events.filter((e) => e.event === "entry");
-      expect(entries.length).toBeGreaterThan(0);
-      expect(entries.every((e) => e.data.channel === "speed")).toBe(true);
-
-      // caught_up should come after entries
-      const caughtUpIdx = events.indexOf(caughtUp!);
-      const lastEntryIdx = events.lastIndexOf(entries[entries.length - 1]);
-      expect(caughtUpIdx).toBeGreaterThan(lastEntryIdx);
-    });
-
-    it("skips history with history=false", async () => {
-      const events = await sseRequest(port, "/stream?history=false", 5);
-
-      // first event should be caught_up, no entry events before it
-      expect(events[0].event).toBe("caught_up");
-    });
-
-    it("receives live events after caught_up", async () => {
-      // start SSE, then ingest in background
-      const eventPromise = sseRequest(port, "/stream?channels=live_test&history=false", 3, 2000);
-
-      // small delay to let SSE connect
       await new Promise((r) => setTimeout(r, 50));
 
       await request(port, "POST", "/ingest", { channel: "live_test", value: "hello" });
       await request(port, "POST", "/ingest", { channel: "live_test", value: "world" });
 
       const events = await eventPromise;
-
-      expect(events[0].event).toBe("caught_up");
       const liveEntries = events.filter((e) => e.event === "entry");
       expect(liveEntries.length).toBeGreaterThanOrEqual(1);
       expect(liveEntries[0].data.channel).toBe("live_test");
     });
 
     it("filters by channel", async () => {
-      await request(port, "POST", "/ingest", { channel: "filter_a", value: 1 });
-      await request(port, "POST", "/ingest", { channel: "filter_b", value: 2 });
+      const eventPromise = sseRequest(port, "/stream?channels=filt_a", 2, 2000);
+      await new Promise((r) => setTimeout(r, 50));
 
-      const events = await sseRequest(port, "/stream?channels=filter_a&after_seq=0", 10);
+      await request(port, "POST", "/ingest", [
+        { channel: "filt_a", value: 1 },
+        { channel: "filt_b", value: 2 },
+      ]);
+
+      const events = await eventPromise;
       const entries = events.filter((e) => e.event === "entry");
-      expect(entries.every((e) => e.data.channel === "filter_a")).toBe(true);
+      expect(entries.every((e) => e.data.channel === "filt_a")).toBe(true);
     });
   });
 
