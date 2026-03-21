@@ -119,6 +119,12 @@ export class WalEngine extends EventEmitter {
 
     await this.findSeqAndGeneration();
     await this.buildFileRangeIndex();
+
+    // Estimate total entries from file range index
+    for (const fr of this.fileRanges) {
+      this.entryCount += fr.maxSeq - fr.minSeq + 1;
+    }
+
     this.openGeneration(this.generation);
   }
 
