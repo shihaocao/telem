@@ -287,45 +287,59 @@ export class WalEngine extends EventEmitter {
     return result;
   }
 
-  /** Return batched ticks in range — no per-channel explosion, fast for bulk replay */
-  async getTicksInRange(startSeq: number, endSeq: number, channels?: Set<string>): Promise<WalTick[]> {
-    const result: WalTick[] = [];
+  /** Stream raw NDJSON lines in seq range. Zero serialization — pipes disk lines directly. */
+  async streamTicksInRange(
+    startSeq: number, endSeq: number,
+    onLine: (raw: string) => void,
+  ): Promise<number> {
+    const candidateFiles = this.getCandidateFiles(startSeq, endSeq);
+    let count = 0;
 
-    // Use cached index to skip files outside range
+    for (const file of candidateFiles) {
+      const filePath = path.join(this.walDir, file);
+      const content = await fs.promises.readFile(filePath, "utf-8");
+      for (const raw of content.split("\n")) {
+        if (raw.length === 0 || raw.startsWith("#")) continue;
+        // Fast seq extraction without full JSON parse: {"seq":N,...
+        const seqEnd = raw.indexOf(",", 7);
+        const seq = parseInt(raw.slice(7, seqEnd), 10);
+        if (isNaN(seq)) continue;
+        if (seq < startSeq) continue;
+        if (seq > endSeq) return count;
+        onLine(raw);
+        count++;
+      }
+    }
+    return count;
+  }
+
+  private getCandidateFiles(startSeq: number, endSeq: number): string[] {
     const candidateFiles: string[] = [];
     for (const fr of this.fileRanges) {
       if (fr.maxSeq < startSeq) continue;
       if (fr.minSeq > endSeq) break;
       candidateFiles.push(fr.file);
     }
+    return candidateFiles;
+  }
 
-    // Fallback: if no index entries, scan all files
-    if (candidateFiles.length === 0 && this.fileRanges.length === 0) {
-      const all = (await fs.promises.readdir(this.walDir)).filter((f) => f.startsWith("wal.")).sort();
-      candidateFiles.push(...all);
-    }
-
-    for (const file of candidateFiles) {
-      const filePath = path.join(this.walDir, file);
-      const content = await fs.promises.readFile(filePath, "utf-8");
-      for (const raw of content.split("\n")) {
-        const tick = parseTickLine(raw);
-        if (!tick) continue;
-        if (tick.seq < startSeq) continue;
-        if (tick.seq > endSeq) return result;
-
-        if (channels) {
-          const filtered: Record<string, unknown> = {};
-          let hasAny = false;
-          for (const ch of channels) {
-            if (ch in tick.d) { filtered[ch] = tick.d[ch]; hasAny = true; }
-          }
-          if (hasAny) result.push({ seq: tick.seq, ts: tick.ts, d: filtered });
-        } else {
-          result.push(tick);
+  /** Return batched ticks in range — no per-channel explosion, fast for bulk replay */
+  async getTicksInRange(startSeq: number, endSeq: number, channels?: Set<string>): Promise<WalTick[]> {
+    const result: WalTick[] = [];
+    await this.streamTicksInRange(startSeq, endSeq, (line) => {
+      const tick = parseTickLine(line);
+      if (!tick) return;
+      if (channels) {
+        const filtered: Record<string, unknown> = {};
+        let hasAny = false;
+        for (const ch of channels) {
+          if (ch in tick.d) { filtered[ch] = tick.d[ch]; hasAny = true; }
         }
+        if (hasAny) result.push({ seq: tick.seq, ts: tick.ts, d: filtered });
+      } else {
+        result.push(tick);
       }
-    }
+    });
     return result;
   }
 

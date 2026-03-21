@@ -41,13 +41,6 @@ export function createServer(wal: WalEngine, sessions: SessionStore, lapDetector
     }
 
     try {
-      // Track save: PUT /tracks/:id
-      const trackMatch = pathname.match(/^\/tracks\/([a-zA-Z0-9_-]+)$/);
-      if (trackMatch && req.method === "PUT" && tracksDir) {
-        await handleTrackSave(req, res, tracksDir, trackMatch[1]);
-        return;
-      }
-
       // Session SSE stream: /sessions/:id/stream
       const streamMatch = pathname.match(/^\/sessions\/([a-zA-Z0-9_-]+)\/stream$/);
       if (streamMatch && req.method === "GET" && lapDetector) {
@@ -63,7 +56,7 @@ export function createServer(wal: WalEngine, sessions: SessionStore, lapDetector
       }
 
       // Guard WAL-dependent routes during compaction
-      const walRoutes = ["/ingest", "/stream", "/query", "/wal/range", "/nuke"];
+      const walRoutes = ["/ingest", "/stream", "/wal/range", "/nuke"];
       if (wal.compacting && walRoutes.some((r) => pathname === r || pathname.startsWith(r))) {
         json(res, 503, { error: "compaction in progress, retry shortly" });
         return;
@@ -73,12 +66,8 @@ export function createServer(wal: WalEngine, sessions: SessionStore, lapDetector
         await handleIngest(req, res, wal);
       } else if (req.method === "GET" && pathname === "/stream") {
         handleStream(url, req, res, wal);
-      } else if (req.method === "GET" && pathname === "/query") {
-        handleQuery(url, res, wal);
       } else if (req.method === "GET" && pathname === "/wal/range") {
         await handleWalRange(url, res, wal);
-      } else if (req.method === "GET" && pathname === "/channels") {
-        json(res, 200, { channels: wal.getChannels() });
       } else if (req.method === "GET" && pathname === "/stats") {
         json(res, 200, {
           seq: wal.currentSeq,
@@ -186,51 +175,6 @@ function handleStream(url: URL, req: http.IncomingMessage, res: http.ServerRespo
   res.on("close", cleanup);
 }
 
-function handleQuery(url: URL, res: http.ServerResponse, wal: WalEngine): void {
-  const channel = url.searchParams.get("channel");
-  if (!channel) {
-    json(res, 400, { error: "channel param required" });
-    return;
-  }
-
-  const startTs = url.searchParams.has("start_ts")
-    ? parseInt(url.searchParams.get("start_ts")!, 10)
-    : undefined;
-  const endTs = url.searchParams.has("end_ts")
-    ? parseInt(url.searchParams.get("end_ts")!, 10)
-    : undefined;
-  const afterSeq = url.searchParams.has("after_seq")
-    ? parseInt(url.searchParams.get("after_seq")!, 10)
-    : undefined;
-  const limit = url.searchParams.has("limit")
-    ? parseInt(url.searchParams.get("limit")!, 10)
-    : 10_000;
-
-  const entries = wal.queryByChannel(channel, { startTs, endTs, afterSeq, limit });
-  json(res, 200, { entries, count: entries.length });
-}
-
-async function handleTrackSave(
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
-  tracksDir: string,
-  id: string,
-): Promise<void> {
-  const raw = await readBody(req);
-  let body: unknown;
-  try { body = JSON.parse(raw); } catch { json(res, 400, { error: "invalid json" }); return; }
-
-  const track = body as any;
-  if (!track.name || !track.track || !Array.isArray(track.track)) {
-    json(res, 400, { error: "track must have name and track array" });
-    return;
-  }
-
-  const filePath = path.join(tracksDir, `${id}.json`);
-  fs.writeFileSync(filePath, JSON.stringify(track, null, 2) + "\n");
-  json(res, 200, { ok: true, id });
-}
-
 async function handleWalRange(url: URL, res: http.ServerResponse, wal: WalEngine): Promise<void> {
   const startSeq = parseInt(url.searchParams.get("start_seq") ?? "", 10);
   const endSeq = parseInt(url.searchParams.get("end_seq") ?? "", 10);
@@ -238,10 +182,14 @@ async function handleWalRange(url: URL, res: http.ServerResponse, wal: WalEngine
     json(res, 400, { error: "start_seq and end_seq are required" });
     return;
   }
-  const channelsParam = url.searchParams.get("channels");
-  const channels = channelsParam ? new Set(channelsParam.split(",")) : undefined;
-  const ticks = await wal.getTicksInRange(startSeq, endSeq, channels);
-  json(res, 200, { ticks, count: ticks.length });
+  // Stream NDJSON — pipes raw WAL lines directly, zero serialization
+  cors(res);
+  res.writeHead(200, { "Content-Type": "application/x-ndjson" });
+  await wal.streamTicksInRange(startSeq, endSeq, (line) => {
+    res.write(line);
+    res.write("\n");
+  });
+  res.end();
 }
 
 // --- Session SSE stream ---

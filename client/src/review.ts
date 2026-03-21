@@ -408,6 +408,40 @@ async function apiFetch(path: string, method = "GET", body?: unknown, skipCache 
   return fetchRemote(path, method, body, key);
 }
 
+/** Fetch NDJSON from /wal/range, parse into ticks array. Caches parsed result. */
+async function fetchWalRange(
+  startSeq: number, endSeq: number, _channels: string,
+  cacheKey: string, forceRefresh: boolean,
+): Promise<{ ticks: Array<{ seq: number; ts: number; d: Record<string, unknown> }> }> {
+  const cached = !forceRefresh ? await cacheGet<{ ticks: any[] }>(cacheKey) : null;
+  if (cached) {
+    // Eagerly refetch in background
+    fetchWalRangeRemote(startSeq, endSeq, cacheKey).catch(() => {});
+    return cached;
+  }
+  return fetchWalRangeRemote(startSeq, endSeq, cacheKey);
+}
+
+async function fetchWalRangeRemote(
+  startSeq: number, endSeq: number, cacheKey: string,
+): Promise<{ ticks: Array<{ seq: number; ts: number; d: Record<string, unknown> }> }> {
+  setStatus("LOADING...", "loading");
+  try {
+    const res = await fetch(`${SERVER_URL}/wal/range?start_seq=${startSeq}&end_seq=${endSeq}`);
+    const text = await res.text();
+    const ticks = text.split("\n").filter((l) => l.length > 0).map((l) => JSON.parse(l));
+    const data = { ticks };
+    await cacheSet(cacheKey, data);
+    setStatus("SYNCED");
+    return data;
+  } catch {
+    const cached = await cacheGet<{ ticks: any[] }>(cacheKey);
+    if (cached) { setStatus("OFFLINE (CACHED)"); return cached; }
+    setStatus("OFFLINE", "error");
+    throw new Error("Server unreachable and no cached data");
+  }
+}
+
 async function fetchRemote(path: string, method: string, body?: unknown, cacheKey?: string): Promise<any> {
   setStatus("LOADING...", "loading");
   const opts: RequestInit = { method, headers: { "Content-Type": "application/json" } };
@@ -608,7 +642,7 @@ async function selectLap(idx: number, forceRefresh = false) {
     updateSeek(0);
   }
 
-  const data = await apiFetch(`/wal/range?start_seq=${lap.startSeq}&end_seq=${lap.endSeq}&channels=${channels}`, "GET", undefined, forceRefresh, cacheKey);
+  const data = await fetchWalRange(lap.startSeq, lap.endSeq, channels, cacheKey, forceRefresh);
   lapTicks = data.ticks;
 
   // Ticks are already grouped by timestamp — just carry forward and extract arrays

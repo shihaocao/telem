@@ -198,15 +198,6 @@ describe("HTTP server", () => {
     });
   });
 
-  describe("GET /channels", () => {
-    it("returns list of known channels", async () => {
-      const res = await request(port, "GET", "/channels");
-      expect(res.status).toBe(200);
-      expect(res.body.channels).toContain("speed");
-      expect(res.body.channels).toContain("rpm");
-    });
-  });
-
   describe("GET /stats", () => {
     it("returns seq, entries, channel counts, generation", async () => {
       const res = await request(port, "GET", "/stats");
@@ -215,39 +206,6 @@ describe("HTTP server", () => {
       expect(typeof res.body.total_entries).toBe("number");
       expect(typeof res.body.channels).toBe("object");
       expect(typeof res.body.generation).toBe("number");
-    });
-  });
-
-  describe("GET /query", () => {
-    it("queries entries by channel", async () => {
-      const res = await request(port, "GET", "/query?channel=speed");
-      expect(res.status).toBe(200);
-      expect(res.body.entries.length).toBeGreaterThan(0);
-      expect(res.body.entries.every((e: any) => e.channel === "speed")).toBe(true);
-    });
-
-    it("requires channel param", async () => {
-      const res = await request(port, "GET", "/query");
-      expect(res.status).toBe(400);
-    });
-
-    it("respects limit", async () => {
-      const res = await request(port, "GET", "/query?channel=speed&limit=1");
-      expect(res.status).toBe(200);
-      expect(res.body.entries).toHaveLength(1);
-    });
-
-    it("filters by after_seq", async () => {
-      const stats = await request(port, "GET", "/stats");
-      const currentSeq = stats.body.seq;
-
-      // ingest one more
-      await request(port, "POST", "/ingest", { channel: "speed", value: 999 });
-
-      const res = await request(port, "GET", `/query?channel=speed&after_seq=${currentSeq}`);
-      expect(res.status).toBe(200);
-      expect(res.body.entries).toHaveLength(1);
-      expect(res.body.entries[0].value).toBe(999);
     });
   });
 

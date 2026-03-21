@@ -113,9 +113,10 @@ export function createLapTimes(
     bestLapIdx = best.idx;
 
     try {
-      const data = await api("GET",
-        `/wal/range?start_seq=${best.startSeq}&end_seq=${best.endSeq}&channels=gps_lat,gps_lon`);
-      const ticks: { ts: number; d: Record<string, number> }[] = data.ticks;
+      const res = await fetch(`${serverUrl}/wal/range?start_seq=${best.startSeq}&end_seq=${best.endSeq}`);
+      const text = await res.text();
+      const ticks: { ts: number; d: Record<string, number> }[] =
+        text.split("\n").filter((l) => l.length > 0).map((l) => JSON.parse(l));
 
       bestCurve = [];
       const startTs = ticks[0]?.ts ?? 0;

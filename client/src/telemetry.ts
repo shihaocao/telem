@@ -126,8 +126,7 @@ export class TelemetryManager {
   }
 
   private ingest(entry: TelemetryEntry): void {
-    if (entry.seq <= this.lastSeq) return; // dedup
-    this.lastSeq = entry.seq;
+    if (entry.seq > this.lastSeq) this.lastSeq = entry.seq;
 
     let buf = this.buffers.get(entry.channel);
     if (!buf) {
