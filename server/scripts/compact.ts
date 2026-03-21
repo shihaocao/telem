@@ -1,28 +1,43 @@
 /**
  * Compact WAL: repack entries with per-batch seq numbering + range footers.
+ * Runs directly against the data directory — no server needed.
  *
- * Usage: tsx scripts/compact.ts [--url http://localhost:4400]
+ * Usage: tsx scripts/compact.ts [--data-dir ./data]
+ *
+ * WARNING: Stop the telem-server before running this.
  */
 
-const args = process.argv.slice(2);
-const url = args.includes("--url") ? args[args.indexOf("--url") + 1] : "http://localhost:4400";
+import { WalEngine } from "../src/wal.js";
 
-async function main() {
-  console.log(`compacting WAL on ${url}...`);
-  const res = await fetch(`${url}/compact`, {
-    method: "POST",
-    signal: AbortSignal.timeout(300_000), // 5 min timeout
-  });
-  if (!res.ok) {
-    console.error(`HTTP ${res.status}: ${await res.text()}`);
-    process.exit(1);
-  }
-  const data = await res.json();
-  console.log(`done:`);
-  console.log(`  old files:   ${data.oldFiles}`);
-  console.log(`  old entries: ${data.oldEntries}`);
-  console.log(`  new entries: ${data.newEntries}`);
-  console.log(`  new max seq: ${data.newSeq}`);
+const args = process.argv.slice(2);
+function arg(name: string, fallback: string): string {
+  const i = args.indexOf(`--${name}`);
+  return i !== -1 && args[i + 1] ? args[i + 1] : fallback;
 }
 
-main().catch((err) => { console.error(err.message); process.exit(1); });
+const DATA_DIR = arg("data-dir", "./data");
+
+async function main() {
+  console.log(`compacting WAL in ${DATA_DIR}...`);
+
+  const wal = new WalEngine({
+    dataDir: DATA_DIR,
+    snapshotThreshold: 50_000,
+    fsyncBatchSize: 100,
+  });
+
+  await wal.init();
+  console.log(`  current seq: ${wal.currentSeq}`);
+  console.log(`  total entries: ${wal.totalEntries}`);
+
+  const result = await wal.compact();
+  console.log(`done:`);
+  console.log(`  old files:   ${result.oldFiles}`);
+  console.log(`  old entries: ${result.oldEntries}`);
+  console.log(`  new entries: ${result.newEntries}`);
+  console.log(`  new max seq: ${result.newSeq}`);
+
+  wal.close();
+}
+
+main().catch((err) => { console.error(err); process.exit(1); });

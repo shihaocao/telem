@@ -336,7 +336,7 @@ export class WalEngine extends EventEmitter {
     let gen = 1, count = 0;
     let oldEntryCount = 0, newEntryCount = 0;
     let fileMinSeq = Infinity, fileMaxSeq = -1;
-    let fd = fs.openSync(path.join(tmpDir, walFileName(gen)), "w");
+    let fh = await fs.promises.open(path.join(tmpDir, walFileName(gen)), "w");
 
     for (const file of files) {
       const content = await fs.promises.readFile(path.join(this.walDir, file), "utf-8");
@@ -349,18 +349,18 @@ export class WalEngine extends EventEmitter {
         if (entry.ts !== lastTs) { newSeq++; lastTs = entry.ts; }
         entry.seq = newSeq;
 
-        fs.writeSync(fd, JSON.stringify(entry) + "\n");
+        await fh.write(JSON.stringify(entry) + "\n");
         if (entry.seq < fileMinSeq) fileMinSeq = entry.seq;
         if (entry.seq > fileMaxSeq) fileMaxSeq = entry.seq;
         newEntryCount++;
         count++;
 
         if (count >= maxPerFile) {
-          fs.writeSync(fd, `#range:${fileMinSeq},${fileMaxSeq}\n`);
-          fs.fsyncSync(fd);
-          fs.closeSync(fd);
+          await fh.write(`#range:${fileMinSeq},${fileMaxSeq}\n`);
+          await fh.sync();
+          await fh.close();
           gen++;
-          fd = fs.openSync(path.join(tmpDir, walFileName(gen)), "w");
+          fh = await fs.promises.open(path.join(tmpDir, walFileName(gen)), "w");
           count = 0;
           fileMinSeq = Infinity;
           fileMaxSeq = -1;
@@ -368,9 +368,9 @@ export class WalEngine extends EventEmitter {
       }
     }
 
-    if (fileMaxSeq >= 0) fs.writeSync(fd, `#range:${fileMinSeq},${fileMaxSeq}\n`);
-    fs.fsyncSync(fd);
-    fs.closeSync(fd);
+    if (fileMaxSeq >= 0) await fh.write(`#range:${fileMinSeq},${fileMaxSeq}\n`);
+    await fh.sync();
+    await fh.close();
 
     // Swap
     for (const file of files) await fs.promises.unlink(path.join(this.walDir, file));
