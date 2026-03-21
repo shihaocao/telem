@@ -154,7 +154,8 @@ describe("HTTP server", () => {
       ]);
       expect(res.status).toBe(200);
       expect(res.body.count).toBe(2);
-      expect(res.body.seq_end).toBeGreaterThan(res.body.seq_start);
+      // Batch entries share the same seq
+      expect(res.body.seq_start).toBe(res.body.seq_end);
     });
 
     it("rejects missing channel", async () => {

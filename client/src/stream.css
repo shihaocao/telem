@@ -1,0 +1,273 @@
+@import "./fonts.css";
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --accent: #ff7b45;
+  --accent-dim: rgba(255, 123, 69, 0.5);
+  --accent-glow: rgba(255, 123, 69, 0.2);
+  --red: #ff4436;
+  --red-dim: rgba(255, 68, 54, 0.5);
+  --green: #3ddf80;
+  --yellow: #ffd320;
+  --text: #bbb;
+  --text-bright: #fff;
+  --text-dim: rgba(255, 255, 255, 0.35);
+  --border: rgba(255, 255, 255, 0.10);
+  --border-bright: rgba(255, 255, 255, 0.20);
+  --font: "Berkeley Mono", "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+body {
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  letter-spacing: -0.03em;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── STREAM MAP ── */
+#map {
+  width: 100vw;
+  height: 100vh;
+}
+
+#map .leaflet-container {
+  background: transparent !important;
+}
+
+#map .leaflet-tile-pane { display: none !important; }
+#map .leaflet-control-container { display: none !important; }
+
+.car-arrow {
+  background: none !important;
+  border: none !important;
+}
+
+.turn-label {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 9px;
+  font-weight: 600;
+  font-family: var(--font);
+  text-align: center;
+  line-height: 14px;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 1);
+}
+
+.sf-label {
+  color: var(--red);
+  font-weight: 700;
+}
+
+/* ── STREAM CAR DATA ── */
+#car-data {
+  width: 100vw;
+  height: 100vh;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+}
+
+#gauges {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 16px 20px;
+  gap: 10px;
+}
+
+#gcircle {
+  position: relative;
+}
+
+.gauge {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.gauge-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  text-shadow: 0 0 8px rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gauge-label-jp {
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+}
+
+.gauge-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.gauge-value {
+  font-size: 42px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  text-shadow: 0 0 15px rgba(255, 255, 255, 0.3), 0 0 40px rgba(255, 107, 53, 0.1), 0 2px 8px rgba(0, 0, 0, 0.9);
+}
+
+.gauge-unit {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 2px;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+
+.gauge-gear-label {
+  display: none;
+}
+
+.gauge-gear-badge {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1;
+  text-shadow: 0 0 10px rgba(255, 107, 53, 0.4), 0 2px 8px rgba(0, 0, 0, 0.9);
+  display: none;
+}
+
+.gauge-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, var(--border-bright) 30%, var(--border-bright) 70%, transparent 100%);
+}
+
+.seg-track {
+  display: flex;
+  gap: 3px;
+  height: 18px;
+  transform: skewX(-12deg);
+  padding: 0 4px;
+}
+
+.seg {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: background 0.05s, box-shadow 0.05s;
+}
+
+.gauge-brake {
+  display: flex;
+  gap: 3px;
+  height: 10px;
+  transform: skewX(-12deg);
+  padding: 0 4px;
+}
+
+.gauge-brake-seg {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: background 0.05s, box-shadow 0.05s;
+}
+
+.gauge-brake.active .gauge-brake-seg {
+  background: var(--red);
+  border-color: var(--red);
+  box-shadow: 0 0 8px rgba(231, 76, 60, 0.4), inset 0 0 4px rgba(231, 76, 60, 0.3);
+}
+
+/* ── STREAM LAP DATA ── */
+#lap-data {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 20px 24px;
+  gap: 6px;
+}
+
+.stream-driver {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: var(--accent);
+  text-transform: uppercase;
+  text-shadow: 0 0 10px rgba(255, 107, 53, 0.4), 0 2px 6px rgba(0, 0, 0, 0.9);
+}
+
+.stream-lap-count {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--text-dim);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+
+.stream-timer {
+  font-size: 48px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 15px rgba(255, 255, 255, 0.3), 0 0 40px rgba(255, 107, 53, 0.08), 0 2px 8px rgba(0, 0, 0, 0.9);
+}
+
+.stream-delta {
+  font-size: 28px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+  min-height: 32px;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+}
+
+.stream-delta.ahead {
+  color: var(--green);
+  text-shadow: 0 0 12px rgba(46, 204, 113, 0.4), 0 2px 8px rgba(0, 0, 0, 0.9);
+}
+
+.stream-delta.behind {
+  color: var(--red);
+  text-shadow: 0 0 12px rgba(231, 76, 60, 0.4), 0 2px 8px rgba(0, 0, 0, 0.9);
+}
+
+.stream-best-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.stream-best-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--green);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+
+.stream-best-time {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--green);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+
+.stream-status {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--text-dim);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+  margin-top: 8px;
+}

@@ -326,9 +326,10 @@ function createServiceRow(name: string, status: string): ServiceState {
   });
 
   restartBtn.addEventListener("click", async () => {
+    const password = (document.getElementById("sudo-pass") as HTMLInputElement).value;
+    if (!password) { restartBtn.textContent = "NO PW"; setTimeout(() => { restartBtn.textContent = "RESTART"; }, 1500); return; }
     if (!confirm(`Restart ${name}?`)) return;
     restartBtn.textContent = "...";
-    const password = (document.getElementById("sudo-pass") as HTMLInputElement).value;
     try {
       await fetch(`${SERVER_URL}/services/${name}/restart`, {
         method: "POST",

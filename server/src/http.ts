@@ -65,11 +65,11 @@ export function createServer(wal: WalEngine, sessions: SessionStore, lapDetector
       if (req.method === "POST" && pathname === "/ingest") {
         await handleIngest(req, res, wal);
       } else if (req.method === "GET" && pathname === "/stream") {
-        handleStream(url, req, res, wal);
+        await handleStream(url, req, res, wal);
       } else if (req.method === "GET" && pathname === "/query") {
         handleQuery(url, res, wal);
       } else if (req.method === "GET" && pathname === "/wal/range") {
-        handleWalRange(url, res, wal);
+        await handleWalRange(url, res, wal);
       } else if (req.method === "GET" && pathname === "/channels") {
         json(res, 200, { channels: wal.getChannels() });
       } else if (req.method === "GET" && pathname === "/stats") {
@@ -96,6 +96,9 @@ export function createServer(wal: WalEngine, sessions: SessionStore, lapDetector
         let body: any = {};
         try { body = JSON.parse(raw); } catch {}
         json(res, 200, handleServiceRestart(svc, body.password));
+      } else if (req.method === "POST" && pathname === "/compact") {
+        const result = await wal.compact();
+        json(res, 200, result);
       } else if (req.method === "POST" && pathname === "/nuke") {
         await wal.nuke();
         json(res, 200, { ok: true });
@@ -151,7 +154,7 @@ async function handleIngest(
   }
 }
 
-function handleStream(url: URL, req: http.IncomingMessage, res: http.ServerResponse, wal: WalEngine): void {
+async function handleStream(url: URL, req: http.IncomingMessage, res: http.ServerResponse, wal: WalEngine): Promise<void> {
   cors(res);
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
@@ -170,7 +173,7 @@ function handleStream(url: URL, req: http.IncomingMessage, res: http.ServerRespo
 
   // replay historical entries
   if (!skipHistory && afterSeq >= 0) {
-    const historical = wal.getEntriesAfterSeq(afterSeq, channelFilter ?? undefined);
+    const historical = await wal.getEntriesAfterSeq(afterSeq, channelFilter ?? undefined);
     for (const entry of historical) {
       sendEvent("entry", entry);
     }
@@ -246,7 +249,7 @@ async function handleTrackSave(
   json(res, 200, { ok: true, id });
 }
 
-function handleWalRange(url: URL, res: http.ServerResponse, wal: WalEngine): void {
+async function handleWalRange(url: URL, res: http.ServerResponse, wal: WalEngine): Promise<void> {
   const startSeq = parseInt(url.searchParams.get("start_seq") ?? "", 10);
   const endSeq = parseInt(url.searchParams.get("end_seq") ?? "", 10);
   if (isNaN(startSeq) || isNaN(endSeq)) {
@@ -255,7 +258,7 @@ function handleWalRange(url: URL, res: http.ServerResponse, wal: WalEngine): voi
   }
   const channelsParam = url.searchParams.get("channels");
   const channels = channelsParam ? new Set(channelsParam.split(",")) : undefined;
-  const entries = wal.getEntriesInRange(startSeq, endSeq, channels);
+  const entries = await wal.getEntriesInRange(startSeq, endSeq, channels);
   json(res, 200, { entries, count: entries.length });
 }
 

@@ -41,12 +41,12 @@ describe("WalEngine", () => {
       expect(b.ts).toBeLessThanOrEqual(Date.now());
     });
 
-    it("stores value of any type", () => {
+    it("stores value of any type", async () => {
       const a = wal.append("gps", { lat: 37.7, lon: -122.4 });
       const b = wal.append("flag", true);
       const c = wal.append("label", "pit-in");
 
-      const entries = wal.getEntriesAfterSeq(0);
+      const entries = await wal.getEntriesAfterSeq(0);
       expect(entries[0].value).toEqual({ lat: 37.7, lon: -122.4 });
       expect(entries[1].value).toBe(true);
       expect(entries[2].value).toBe("pit-in");
@@ -77,7 +77,7 @@ describe("WalEngine", () => {
   });
 
   describe("appendBatch", () => {
-    it("appends multiple entries with sequential seqs", () => {
+    it("appends multiple entries with shared batch seq", () => {
       const entries = wal.appendBatch([
         { channel: "speed", value: 100 },
         { channel: "rpm", value: 8000 },
@@ -85,10 +85,11 @@ describe("WalEngine", () => {
       ]);
 
       expect(entries).toHaveLength(3);
+      // All entries in a batch share the same seq
       expect(entries[0].seq).toBe(1);
-      expect(entries[1].seq).toBe(2);
-      expect(entries[2].seq).toBe(3);
-      expect(wal.currentSeq).toBe(3);
+      expect(entries[1].seq).toBe(1);
+      expect(entries[2].seq).toBe(1);
+      expect(wal.currentSeq).toBe(1);
     });
 
     it("emits entry events for each item in batch", () => {
@@ -220,7 +221,7 @@ describe("WalEngine", () => {
       expect(w2.currentSeq).toBe(5);
       expect(w2.totalEntries).toBe(5);
 
-      const all = w2.getEntriesAfterSeq(0);
+      const all = await w2.getEntriesAfterSeq(0);
       expect(all.map((e) => e.value)).toEqual([10, 20, 30, 40, 50]);
 
       w2.close();
@@ -274,15 +275,15 @@ describe("WalEngine", () => {
       expect(wal.queryByChannel("nonexistent")).toEqual([]);
     });
 
-    it("getEntriesAfterSeq returns entries across channels", () => {
-      const results = wal.getEntriesAfterSeq(4);
+    it("getEntriesAfterSeq returns entries across channels", async () => {
+      const results = await wal.getEntriesAfterSeq(4);
       expect(results).toHaveLength(2);
       expect(results[0].seq).toBe(5);
       expect(results[1].seq).toBe(6);
     });
 
-    it("getEntriesAfterSeq filters by channel set", () => {
-      const results = wal.getEntriesAfterSeq(0, new Set(["rpm"]));
+    it("getEntriesAfterSeq filters by channel set", async () => {
+      const results = await wal.getEntriesAfterSeq(0, new Set(["rpm"]));
       expect(results).toHaveLength(2);
       expect(results.every((e) => e.channel === "rpm")).toBe(true);
     });

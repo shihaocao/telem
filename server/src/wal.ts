@@ -11,8 +11,8 @@ export interface WalEntry {
 
 export interface WalConfig {
   dataDir: string;
-  snapshotThreshold: number; // entries per generation before snapshot
-  fsyncBatchSize: number; // batch N writes per fsync
+  snapshotThreshold: number;
+  fsyncBatchSize: number;
 }
 
 interface Snapshot {
@@ -22,6 +22,7 @@ interface Snapshot {
 
 const WAL_DIR = "wal";
 const SNAP_DIR = "snapshots";
+const MAX_CHANNEL_ENTRIES = 6000;
 
 function walFileName(gen: number): string {
   return `wal.${String(gen).padStart(6, "0")}.log`;
@@ -38,10 +39,9 @@ export class WalEngine extends EventEmitter {
   private entriesInGeneration = 0;
   private fd: number | null = null;
   private pendingWrites = 0;
+  private entryCount = 0;
 
-  // in-memory index
   private byChannel = new Map<string, WalEntry[]>();
-  private bySeq = new Map<number, WalEntry>();
 
   private walDir: string;
   private snapDir: string;
@@ -55,72 +55,57 @@ export class WalEngine extends EventEmitter {
   }
 
   async init(): Promise<void> {
-    fs.mkdirSync(this.walDir, { recursive: true });
-    fs.mkdirSync(this.snapDir, { recursive: true });
+    await fs.promises.mkdir(this.walDir, { recursive: true });
+    await fs.promises.mkdir(this.snapDir, { recursive: true });
 
-    // load latest snapshot
-    const snap = this.loadLatestSnapshot();
+    const snap = await this.loadLatestSnapshot();
     if (snap) {
       this.seq = snap.seq;
       this.generation = snap.generation;
     }
 
-    // replay ALL WAL entries to rebuild full in-memory index
-    // snapshot only provides seq + generation so we know where to resume writing
-    await this.replayWal();
-
-    // open current generation file for appending
+    await this.fastReplay();
     this.openGeneration(this.generation);
   }
 
-  private loadLatestSnapshot(): Snapshot | null {
-    const files = fs.readdirSync(this.snapDir).filter((f) => f.startsWith("snap.")).sort();
+  private async loadLatestSnapshot(): Promise<Snapshot | null> {
+    const files = (await fs.promises.readdir(this.snapDir)).filter((f) => f.startsWith("snap.")).sort();
     if (files.length === 0) return null;
-
-    const latest = files[files.length - 1];
-    const data = fs.readFileSync(path.join(this.snapDir, latest), "utf-8");
-    return JSON.parse(data) as Snapshot;
+    const content = await fs.promises.readFile(path.join(this.snapDir, files[files.length - 1]), "utf-8");
+    return JSON.parse(content) as Snapshot;
   }
 
-  private async replayWal(): Promise<void> {
-    const files = fs.readdirSync(this.walDir).filter((f) => f.startsWith("wal.")).sort();
+  private async fastReplay(): Promise<void> {
+    const files = (await fs.promises.readdir(this.walDir)).filter((f) => f.startsWith("wal.")).sort();
+    let totalLines = 0;
 
     for (const file of files) {
-      const content = fs.readFileSync(path.join(this.walDir, file), "utf-8");
-      const lines = content.split("\n").filter((l) => l.length > 0);
-
-      for (const line of lines) {
+      const content = await fs.promises.readFile(path.join(this.walDir, file), "utf-8");
+      for (const line of content.split("\n")) {
+        if (line.length === 0 || line.startsWith("#")) continue;
         let entry: WalEntry;
-        try {
-          entry = JSON.parse(line) as WalEntry;
-        } catch {
-          continue; // skip corrupt lines
-        }
+        try { entry = JSON.parse(line) as WalEntry; } catch { continue; }
 
-        this.indexEntry(entry);
-        if (entry.seq > this.seq) {
-          this.seq = entry.seq;
-        }
+        if (entry.seq > this.seq) this.seq = entry.seq;
+        totalLines++;
+
+        let arr = this.byChannel.get(entry.channel);
+        if (!arr) { arr = []; this.byChannel.set(entry.channel, arr); }
+        arr.push(entry);
+        if (arr.length > MAX_CHANNEL_ENTRIES) arr.shift();
       }
     }
 
-    // figure out entries in current generation
+    this.entryCount = totalLines;
+
     const currentFile = path.join(this.walDir, walFileName(this.generation));
-    if (fs.existsSync(currentFile)) {
-      const content = fs.readFileSync(currentFile, "utf-8");
-      this.entriesInGeneration = content.split("\n").filter((l) => l.length > 0).length;
-    }
+    try {
+      const content = await fs.promises.readFile(currentFile, "utf-8");
+      this.entriesInGeneration = content.split("\n").filter((l) => l.length > 0 && !l.startsWith("#")).length;
+    } catch { /* file may not exist yet */ }
   }
 
-  private indexEntry(entry: WalEntry): void {
-    this.bySeq.set(entry.seq, entry);
-    let arr = this.byChannel.get(entry.channel);
-    if (!arr) {
-      arr = [];
-      this.byChannel.set(entry.channel, arr);
-    }
-    arr.push(entry);
-  }
+  // ── Write path (sync for durability) ──
 
   private openGeneration(gen: number): void {
     if (this.fd !== null) {
@@ -128,8 +113,7 @@ export class WalEngine extends EventEmitter {
       fs.closeSync(this.fd);
     }
     this.generation = gen;
-    const filePath = path.join(this.walDir, walFileName(gen));
-    this.fd = fs.openSync(filePath, "a");
+    this.fd = fs.openSync(path.join(this.walDir, walFileName(gen)), "a");
     this.pendingWrites = 0;
   }
 
@@ -141,8 +125,7 @@ export class WalEngine extends EventEmitter {
       value,
     };
 
-    const line = JSON.stringify(entry) + "\n";
-    fs.writeSync(this.fd!, Buffer.from(line));
+    fs.writeSync(this.fd!, Buffer.from(JSON.stringify(entry) + "\n"));
     this.pendingWrites++;
 
     if (this.pendingWrites >= this.config.fsyncBatchSize) {
@@ -150,8 +133,9 @@ export class WalEngine extends EventEmitter {
       this.pendingWrites = 0;
     }
 
-    this.indexEntry(entry);
+    this.indexLive(entry);
     this.entriesInGeneration++;
+    this.entryCount++;
     this.emit("entry", entry);
 
     if (this.entriesInGeneration >= this.config.snapshotThreshold && !this.snapshotting) {
@@ -162,30 +146,27 @@ export class WalEngine extends EventEmitter {
   }
 
   appendBatch(items: Array<{ channel: string; value: unknown; ts?: number }>): WalEntry[] {
+    const batchSeq = ++this.seq;
     const entries: WalEntry[] = [];
 
     for (const item of items) {
       const entry: WalEntry = {
-        seq: ++this.seq,
+        seq: batchSeq,
         ts: item.ts ?? Date.now(),
         channel: item.channel,
         value: item.value,
       };
       entries.push(entry);
-
-      const line = JSON.stringify(entry) + "\n";
-      fs.writeSync(this.fd!, Buffer.from(line));
-      this.indexEntry(entry);
+      fs.writeSync(this.fd!, Buffer.from(JSON.stringify(entry) + "\n"));
+      this.indexLive(entry);
       this.entriesInGeneration++;
+      this.entryCount++;
     }
 
-    // single fsync for the whole batch
     fs.fsyncSync(this.fd!);
     this.pendingWrites = 0;
 
-    for (const entry of entries) {
-      this.emit("entry", entry);
-    }
+    for (const entry of entries) this.emit("entry", entry);
 
     if (this.entriesInGeneration >= this.config.snapshotThreshold && !this.snapshotting) {
       this.triggerSnapshot();
@@ -194,57 +175,41 @@ export class WalEngine extends EventEmitter {
     return entries;
   }
 
+  private indexLive(entry: WalEntry): void {
+    let arr = this.byChannel.get(entry.channel);
+    if (!arr) { arr = []; this.byChannel.set(entry.channel, arr); }
+    arr.push(entry);
+    if (arr.length > MAX_CHANNEL_ENTRIES) arr.shift();
+  }
+
   private triggerSnapshot(): void {
     this.snapshotting = true;
-
-    // fsync current WAL before snapshotting
     fs.fsyncSync(this.fd!);
     this.pendingWrites = 0;
 
-    const snap: Snapshot = {
-      seq: this.seq,
-      generation: this.generation + 1, // next generation after snapshot
-    };
-
+    const snap: Snapshot = { seq: this.seq, generation: this.generation + 1 };
     const snapFile = path.join(this.snapDir, snapFileName(snap.seq));
     const tmpFile = snapFile + ".tmp";
-
-    // write to tmp, fsync, rename
     const tmpFd = fs.openSync(tmpFile, "w");
     fs.writeSync(tmpFd, JSON.stringify(snap));
     fs.fsyncSync(tmpFd);
     fs.closeSync(tmpFd);
     fs.renameSync(tmpFile, snapFile);
 
-    // rotate WAL to new generation
     this.openGeneration(this.generation + 1);
     this.entriesInGeneration = 0;
     this.snapshotting = false;
   }
 
-  // query helpers
+  // ── Read path (async to avoid blocking ingestion) ──
 
   getChannels(): string[] {
     return Array.from(this.byChannel.keys());
   }
 
-  /** Return entries with seq in [startSeq, endSeq], optionally filtered by channel. */
-  getEntriesInRange(startSeq: number, endSeq: number, channels?: Set<string>): WalEntry[] {
-    const result: WalEntry[] = [];
-    for (let s = startSeq; s <= endSeq; s++) {
-      const e = this.bySeq.get(s);
-      if (!e) continue;
-      if (channels && !channels.has(e.channel)) continue;
-      result.push(e);
-    }
-    return result;
-  }
-
   getChannelCounts(): Record<string, number> {
     const counts: Record<string, number> = {};
-    for (const [ch, arr] of this.byChannel) {
-      counts[ch] = arr.length;
-    }
+    for (const [ch, arr] of this.byChannel) counts[ch] = arr.length;
     return counts;
   }
 
@@ -254,14 +219,9 @@ export class WalEngine extends EventEmitter {
   ): WalEntry[] {
     const arr = this.byChannel.get(channel);
     if (!arr) return [];
-
     const limit = opts.limit ?? 10_000;
     let startIdx = 0;
-
-    // binary search for afterSeq
-    if (opts.afterSeq != null) {
-      startIdx = this.binarySearchAfterSeq(arr, opts.afterSeq);
-    }
+    if (opts.afterSeq != null) startIdx = this.binarySearchAfterSeq(arr, opts.afterSeq);
 
     const result: WalEntry[] = [];
     for (let i = startIdx; i < arr.length && result.length < limit; i++) {
@@ -273,63 +233,186 @@ export class WalEngine extends EventEmitter {
     return result;
   }
 
-  /** Get all entries after a given seq across all channels (or filtered) */
-  getEntriesAfterSeq(afterSeq: number, channels?: Set<string>): WalEntry[] {
+  async getEntriesInRange(startSeq: number, endSeq: number, channels?: Set<string>): Promise<WalEntry[]> {
     const result: WalEntry[] = [];
-    // walk seqs from afterSeq+1 to current
-    for (let s = afterSeq + 1; s <= this.seq; s++) {
-      const e = this.bySeq.get(s);
-      if (!e) continue;
-      if (channels && !channels.has(e.channel)) continue;
-      result.push(e);
+    const files = (await fs.promises.readdir(this.walDir)).filter((f) => f.startsWith("wal.")).sort();
+
+    for (const file of files) {
+      const filePath = path.join(this.walDir, file);
+      const range = await this.readFileRange(filePath);
+      if (range) {
+        if (range.maxSeq < startSeq) continue;
+        if (range.minSeq > endSeq) break;
+      }
+
+      const content = await fs.promises.readFile(filePath, "utf-8");
+      for (const line of content.split("\n")) {
+        if (line.length === 0 || line.startsWith("#")) continue;
+        let entry: WalEntry;
+        try { entry = JSON.parse(line) as WalEntry; } catch { continue; }
+        if (entry.seq < startSeq) continue;
+        if (entry.seq > endSeq) return result;
+        if (channels && !channels.has(entry.channel)) continue;
+        result.push(entry);
+      }
     }
     return result;
   }
 
+  async getEntriesAfterSeq(afterSeq: number, channels?: Set<string>): Promise<WalEntry[]> {
+    const result: WalEntry[] = [];
+    const files = (await fs.promises.readdir(this.walDir)).filter((f) => f.startsWith("wal.")).sort();
+
+    for (const file of files) {
+      const filePath = path.join(this.walDir, file);
+      const range = await this.readFileRange(filePath);
+      if (range && range.maxSeq <= afterSeq) continue;
+
+      const content = await fs.promises.readFile(filePath, "utf-8");
+      for (const line of content.split("\n")) {
+        if (line.length === 0 || line.startsWith("#")) continue;
+        let entry: WalEntry;
+        try { entry = JSON.parse(line) as WalEntry; } catch { continue; }
+        if (entry.seq <= afterSeq) continue;
+        if (channels && !channels.has(entry.channel)) continue;
+        result.push(entry);
+      }
+    }
+    return result;
+  }
+
+  /** Read #range:min,max footer from WAL file */
+  private async readFileRange(filePath: string): Promise<{ minSeq: number; maxSeq: number } | null> {
+    try {
+      // Read just the last ~200 bytes for the footer
+      const stat = await fs.promises.stat(filePath);
+      const size = stat.size;
+      if (size === 0) return null;
+      const readSize = Math.min(200, size);
+      const buf = Buffer.alloc(readSize);
+      const fh = await fs.promises.open(filePath, "r");
+      await fh.read(buf, 0, readSize, size - readSize);
+      await fh.close();
+      const tail = buf.toString("utf-8");
+      const lines = tail.split("\n");
+      for (let i = lines.length - 1; i >= 0; i--) {
+        if (lines[i].startsWith("#range:")) {
+          const parts = lines[i].slice(7).split(",");
+          return { minSeq: parseInt(parts[0], 10), maxSeq: parseInt(parts[1], 10) };
+        }
+        if (lines[i].length > 0 && !lines[i].startsWith("#")) break;
+      }
+    } catch {}
+    return null;
+  }
+
   private binarySearchAfterSeq(arr: WalEntry[], targetSeq: number): number {
-    let lo = 0;
-    let hi = arr.length;
+    let lo = 0, hi = arr.length;
     while (lo < hi) {
       const mid = (lo + hi) >>> 1;
-      if (arr[mid].seq <= targetSeq) {
-        lo = mid + 1;
-      } else {
-        hi = mid;
-      }
+      if (arr[mid].seq <= targetSeq) lo = mid + 1;
+      else hi = mid;
     }
     return lo;
   }
 
-  get currentSeq(): number {
-    return this.seq;
-  }
+  get currentSeq(): number { return this.seq; }
+  get currentGeneration(): number { return this.generation; }
+  get totalEntries(): number { return this.entryCount; }
 
-  get currentGeneration(): number {
-    return this.generation;
-  }
+  // ── Maintenance ──
 
-  get totalEntries(): number {
-    return this.bySeq.size;
-  }
-
-  /** Clear all data and reset to empty state */
-  async nuke(): Promise<void> {
+  async compact(): Promise<{ oldFiles: number; oldEntries: number; newEntries: number; newSeq: number }> {
     this.close();
-    fs.rmSync(this.walDir, { recursive: true, force: true });
-    fs.rmSync(this.snapDir, { recursive: true, force: true });
+
+    const files = (await fs.promises.readdir(this.walDir)).filter((f) => f.startsWith("wal.")).sort();
+    const oldFileCount = files.length;
+
+    const tmpDir = path.join(this.walDir, "_compact_tmp");
+    await fs.promises.mkdir(tmpDir, { recursive: true });
+
+    const maxPerFile = this.config.snapshotThreshold;
+    let newSeq = 0, lastTs = -1;
+    let gen = 1, count = 0;
+    let oldEntryCount = 0, newEntryCount = 0;
+    let fileMinSeq = Infinity, fileMaxSeq = -1;
+    let fd = fs.openSync(path.join(tmpDir, walFileName(gen)), "w");
+
+    for (const file of files) {
+      const content = await fs.promises.readFile(path.join(this.walDir, file), "utf-8");
+      for (const line of content.split("\n")) {
+        if (line.length === 0 || line.startsWith("#")) continue;
+        let entry: WalEntry;
+        try { entry = JSON.parse(line) as WalEntry; } catch { continue; }
+        oldEntryCount++;
+
+        if (entry.ts !== lastTs) { newSeq++; lastTs = entry.ts; }
+        entry.seq = newSeq;
+
+        fs.writeSync(fd, JSON.stringify(entry) + "\n");
+        if (entry.seq < fileMinSeq) fileMinSeq = entry.seq;
+        if (entry.seq > fileMaxSeq) fileMaxSeq = entry.seq;
+        newEntryCount++;
+        count++;
+
+        if (count >= maxPerFile) {
+          fs.writeSync(fd, `#range:${fileMinSeq},${fileMaxSeq}\n`);
+          fs.fsyncSync(fd);
+          fs.closeSync(fd);
+          gen++;
+          fd = fs.openSync(path.join(tmpDir, walFileName(gen)), "w");
+          count = 0;
+          fileMinSeq = Infinity;
+          fileMaxSeq = -1;
+        }
+      }
+    }
+
+    if (fileMaxSeq >= 0) fs.writeSync(fd, `#range:${fileMinSeq},${fileMaxSeq}\n`);
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+
+    // Swap
+    for (const file of files) await fs.promises.unlink(path.join(this.walDir, file));
+    for (const file of await fs.promises.readdir(tmpDir)) {
+      await fs.promises.rename(path.join(tmpDir, file), path.join(this.walDir, file));
+    }
+    await fs.promises.rmdir(tmpDir);
+
+    // Snapshots
+    const snaps = (await fs.promises.readdir(this.snapDir)).filter((f) => f.startsWith("snap."));
+    for (const file of snaps) await fs.promises.unlink(path.join(this.snapDir, file));
+    await fs.promises.writeFile(
+      path.join(this.snapDir, snapFileName(newSeq)),
+      JSON.stringify({ seq: newSeq, generation: gen } as Snapshot),
+    );
+
+    // Re-init
     this.byChannel.clear();
-    this.bySeq.clear();
     this.seq = 0;
     this.generation = 1;
     this.entriesInGeneration = 0;
+    this.entryCount = 0;
+    await this.init();
+
+    return { oldFiles: oldFileCount, oldEntries: oldEntryCount, newEntries: newEntryCount, newSeq };
+  }
+
+  async nuke(): Promise<void> {
+    this.close();
+    await fs.promises.rm(this.walDir, { recursive: true, force: true });
+    await fs.promises.rm(this.snapDir, { recursive: true, force: true });
+    this.byChannel.clear();
+    this.seq = 0;
+    this.generation = 1;
+    this.entriesInGeneration = 0;
+    this.entryCount = 0;
     await this.init();
   }
 
-  /** Flush pending writes and close the WAL fd */
   close(): void {
     if (this.fd !== null) {
-      fs.fsyncSync(this.fd);
-      fs.closeSync(this.fd);
+      try { fs.fsyncSync(this.fd); fs.closeSync(this.fd); } catch {}
       this.fd = null;
     }
   }
