@@ -130,28 +130,15 @@ async function handleIngest(
     return;
   }
 
-  if (Array.isArray(body)) {
-    // batch ingest
-    const items = body as Array<{ channel: string; value: unknown; ts?: number }>;
-    for (const item of items) {
-      if (!item.channel) {
-        json(res, 400, { error: "each item must have a channel" });
-        return;
-      }
-    }
-    const entries = wal.appendBatch(items);
-    json(res, 200, { seq_start: entries[0].seq, seq_end: entries[entries.length - 1].seq, count: entries.length });
-  } else if (body && typeof body === "object") {
-    const item = body as { channel: string; value: unknown; ts?: number };
-    if (!item.channel) {
-      json(res, 400, { error: "channel is required" });
+  const items: Array<{ channel: string; value: unknown; ts?: number }> = Array.isArray(body) ? body : [body];
+  for (const item of items) {
+    if (!item || !item.channel) {
+      json(res, 400, { error: "each item must have a channel" });
       return;
     }
-    const entry = wal.append(item.channel, item.value, item.ts);
-    json(res, 200, { seq: entry.seq });
-  } else {
-    json(res, 400, { error: "expected object or array" });
   }
+  const entries = wal.append(...items);
+  json(res, 200, { seq: entries[0].seq, count: entries.length });
 }
 
 async function handleStream(url: URL, req: http.IncomingMessage, res: http.ServerResponse, wal: WalEngine): Promise<void> {

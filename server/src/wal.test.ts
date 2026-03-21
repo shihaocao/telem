@@ -25,26 +25,26 @@ describe("WalEngine", () => {
 
   describe("append", () => {
     it("assigns incrementing seq numbers", () => {
-      const a = wal.append("speed", 100);
-      const b = wal.append("speed", 200);
+      const [a] = wal.append({ channel: "speed", value: 100 });
+      const [b] = wal.append({ channel: "speed", value: 200 });
       expect(a.seq).toBe(1);
       expect(b.seq).toBe(2);
     });
 
     it("uses provided ts or defaults to now", () => {
-      const a = wal.append("speed", 100, 1234567890);
+      const [a] = wal.append({ channel: "speed", value: 100, ts: 1234567890 });
       expect(a.ts).toBe(1234567890);
 
       const before = Date.now();
-      const b = wal.append("speed", 200);
+      const [b] = wal.append({ channel: "speed", value: 200 });
       expect(b.ts).toBeGreaterThanOrEqual(before);
       expect(b.ts).toBeLessThanOrEqual(Date.now());
     });
 
     it("stores value of any type", async () => {
-      const a = wal.append("gps", { lat: 37.7, lon: -122.4 });
-      const b = wal.append("flag", true);
-      const c = wal.append("label", "pit-in");
+      const [a] = wal.append({ channel: "gps", value: { lat: 37.7, lon: -122.4 } });
+      const [b] = wal.append({ channel: "flag", value: true });
+      const [c] = wal.append({ channel: "label", value: "pit-in" });
 
       const entries = await wal.getEntriesAfterSeq(0);
       expect(entries[0].value).toEqual({ lat: 37.7, lon: -122.4 });
@@ -56,8 +56,8 @@ describe("WalEngine", () => {
       const received: WalEntry[] = [];
       wal.on("entry", (e: WalEntry) => received.push(e));
 
-      wal.append("speed", 100);
-      wal.append("rpm", 8000);
+      wal.append({ channel: "speed", value: 100 });
+      wal.append({ channel: "rpm", value: 8000 });
 
       expect(received).toHaveLength(2);
       expect(received[0].channel).toBe("speed");
@@ -68,8 +68,8 @@ describe("WalEngine", () => {
       expect(wal.currentSeq).toBe(0);
       expect(wal.totalEntries).toBe(0);
 
-      wal.append("speed", 1);
-      wal.append("speed", 2);
+      wal.append({ channel: "speed", value: 1 });
+      wal.append({ channel: "speed", value: 2 });
 
       expect(wal.currentSeq).toBe(2);
       expect(wal.totalEntries).toBe(2);
@@ -78,11 +78,11 @@ describe("WalEngine", () => {
 
   describe("appendBatch", () => {
     it("appends multiple entries with shared batch seq", () => {
-      const entries = wal.appendBatch([
+      const entries = wal.append(
         { channel: "speed", value: 100 },
         { channel: "rpm", value: 8000 },
         { channel: "speed", value: 105 },
-      ]);
+      );
 
       expect(entries).toHaveLength(3);
       // All entries in a batch share the same seq
@@ -96,19 +96,19 @@ describe("WalEngine", () => {
       const received: WalEntry[] = [];
       wal.on("entry", (e: WalEntry) => received.push(e));
 
-      wal.appendBatch([
+      wal.append(
         { channel: "a", value: 1 },
         { channel: "b", value: 2 },
-      ]);
+      );
 
       expect(received).toHaveLength(2);
     });
   });
 
   describe("WAL file persistence", () => {
-    it("writes JSON lines to wal file", () => {
-      wal.append("speed", 100);
-      wal.append("rpm", 8000);
+    it("writes compact JSON lines to wal file", () => {
+      wal.append({ channel: "speed", value: 100 });
+      wal.append({ channel: "rpm", value: 8000 });
       wal.close();
 
       const walFile = path.join(dataDir, "wal", "wal.000001.log");
@@ -118,16 +118,15 @@ describe("WalEngine", () => {
       expect(lines).toHaveLength(2);
       const parsed = JSON.parse(lines[0]);
       expect(parsed.seq).toBe(1);
-      expect(parsed.channel).toBe("speed");
-      expect(parsed.value).toBe(100);
+      expect(parsed.d.speed).toBe(100);
     });
   });
 
   describe("recovery", () => {
     it("replays WAL entries on restart", async () => {
-      wal.append("speed", 100);
-      wal.append("rpm", 8000);
-      wal.append("speed", 110);
+      wal.append({ channel: "speed", value: 100 });
+      wal.append({ channel: "rpm", value: 8000 });
+      wal.append({ channel: "speed", value: 110 });
       wal.close();
 
       // create new engine on same data dir
@@ -147,19 +146,19 @@ describe("WalEngine", () => {
     });
 
     it("continues seq numbering after restart", async () => {
-      wal.append("speed", 100);
+      wal.append({ channel: "speed", value: 100 });
       wal.close();
 
       const wal2 = new WalEngine({ dataDir, snapshotThreshold: 50_000, fsyncBatchSize: 10 });
       await wal2.init();
-      const entry = wal2.append("speed", 200);
+      const [entry] = wal2.append({ channel: "speed", value: 200 });
 
       expect(entry.seq).toBe(2);
       wal2.close();
     });
 
     it("handles corrupt WAL lines gracefully", async () => {
-      wal.append("speed", 100);
+      wal.append({ channel: "speed", value: 100 });
       wal.close();
 
       // inject corrupt line
@@ -183,7 +182,7 @@ describe("WalEngine", () => {
       await smallWal.init();
 
       for (let i = 0; i < 6; i++) {
-        smallWal.append("ch", i);
+        smallWal.append({ channel: "ch", value: i });
       }
 
       expect(smallWal.currentGeneration).toBe(2);
@@ -203,7 +202,7 @@ describe("WalEngine", () => {
 
       // 5 entries: snapshot after 3, gen2 gets entries 4-5
       for (let i = 1; i <= 5; i++) {
-        w1.append("ch", i * 10);
+        w1.append({ channel: "ch", value: i * 10 });
       }
       w1.close();
 
@@ -224,12 +223,12 @@ describe("WalEngine", () => {
 
   describe("queries", () => {
     beforeEach(() => {
-      wal.append("speed", 100, 1000);
-      wal.append("rpm", 8000, 1001);
-      wal.append("speed", 110, 1002);
-      wal.append("rpm", 8500, 1003);
-      wal.append("speed", 120, 1004);
-      wal.append("gps", { lat: 1 }, 1005);
+      wal.append({ channel: "speed", value: 100, ts: 1000 });
+      wal.append({ channel: "rpm", value: 8000, ts: 1001 });
+      wal.append({ channel: "speed", value: 110, ts: 1002 });
+      wal.append({ channel: "rpm", value: 8500, ts: 1003 });
+      wal.append({ channel: "speed", value: 120, ts: 1004 });
+      wal.append({ channel: "gps", value: { lat: 1 }, ts: 1005 });
     });
 
     it("getChannels returns all known channels", () => {
@@ -284,8 +283,8 @@ describe("WalEngine", () => {
 
   describe("nuke", () => {
     it("clears all data and resets state", async () => {
-      wal.append("speed", 100);
-      wal.append("rpm", 8000);
+      wal.append({ channel: "speed", value: 100 });
+      wal.append({ channel: "rpm", value: 8000 });
       expect(wal.currentSeq).toBe(2);
       expect(wal.totalEntries).toBe(2);
 
@@ -297,16 +296,16 @@ describe("WalEngine", () => {
     });
 
     it("allows new appends after nuke", async () => {
-      wal.append("speed", 100);
+      wal.append({ channel: "speed", value: 100 });
       await wal.nuke();
 
-      const entry = wal.append("rpm", 5000);
+      const [entry] = wal.append({ channel: "rpm", value: 5000 });
       expect(entry.seq).toBe(1);
       expect(wal.totalEntries).toBe(1);
     });
 
     it("removes WAL files", async () => {
-      wal.append("speed", 100);
+      wal.append({ channel: "speed", value: 100 });
       wal.close();
 
       const walFiles = fs.readdirSync(path.join(dataDir, "wal"));

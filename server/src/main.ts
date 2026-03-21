@@ -65,7 +65,7 @@ async function main(): Promise<void> {
         if (!isNaN(tempC)) { sum += tempC; count++; }
       }
       if (count > 0) {
-        wal.append("jetson_temp", Math.round((sum / count) * 10) / 10, ts);
+        wal.append({ channel: "jetson_temp", value: Math.round((sum / count) * 10) / 10, ts });
       }
     } catch {}
   }
