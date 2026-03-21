@@ -60,14 +60,24 @@ const map = L.map(mapContainer, {
   attributionControl: false,
   rotate: true,
   rotateControl: false,
-  shiftKeyRotate: false,
+  shiftKeyRotate: true,
+  touchRotate: true,
   bearing: state.bearing,
 } as any).setView(state.center, state.zoom);
+
+// Sync bearing input when map is rotated via shift+drag
+(map as any).on("rotate", () => {
+  const b = Math.round((map as any).getBearing());
+  state.bearing = b;
+  bearingInput.value = String(b);
+  document.getElementById("bearing-value")!.textContent = `${b}°`;
+});
 const darkTiles = L.tileLayer(TILES, TILE_OPTS).addTo(map);
 const satTiles = L.tileLayer(TILES_SAT, TILE_OPTS_SAT);
 let isSat = false;
 
-document.getElementById("btn-sat")?.addEventListener("click", () => {
+document.getElementById("btn-sat")?.addEventListener("click", (e) => {
+  e.stopPropagation();
   isSat = !isSat;
   document.getElementById("btn-sat")!.classList.toggle("active", isSat);
   if (isSat) { map.removeLayer(darkTiles); satTiles.addTo(map); }
@@ -256,6 +266,28 @@ function findInsertIndex(lat: number, lon: number): number {
   return bestIdx;
 }
 
+// ── Mode buttons (toolbar) ──
+// Clicking a tool activates it. Click the map to place. Tool auto-deselects
+// after placement for turn/finish (one-shot). Track mode stays active for
+// multi-point placement. Select mode is the default (no map click action).
+const modeButtons = document.querySelectorAll(".mode-btn");
+
+function setMode(mode: Mode) {
+  state.mode = mode;
+  modeButtons.forEach((b) => {
+    b.classList.toggle("active", (b as HTMLElement).dataset.mode === mode);
+  });
+  mapContainer.style.cursor = mode === "select" ? "" : "crosshair";
+}
+
+modeButtons.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const mode = (btn as HTMLElement).dataset.mode as Mode;
+    // Toggle off if already active (return to select)
+    setMode(state.mode === mode ? "select" : mode);
+  });
+});
+
 // ── Map click handler ──
 map.on("click", (e: L.LeafletMouseEvent) => {
   if (isDragging) return;
@@ -267,6 +299,7 @@ map.on("click", (e: L.LeafletMouseEvent) => {
       const idx = findInsertIndex(lat, lng);
       state.track.splice(idx, 0, [lat, lng]);
       renderTrack();
+      // Stay in track mode for multi-point placement
       break;
     }
     case "turn": {
@@ -274,12 +307,14 @@ map.on("click", (e: L.LeafletMouseEvent) => {
       const label = String(state.turns.length + 1);
       state.turns.push({ label, pos: [lat, lng] });
       renderTurns();
+      setMode("select"); // one-shot
       break;
     }
     case "finish": {
       pushUndo();
       state.finishLine = [lat, lng];
       renderFinish();
+      setMode("select"); // one-shot
       break;
     }
     case "select":
@@ -287,22 +322,13 @@ map.on("click", (e: L.LeafletMouseEvent) => {
   }
 });
 
-// ── Mode buttons ──
-const modeButtons = document.querySelectorAll(".mode-btn");
-modeButtons.forEach((btn) => {
-  btn.addEventListener("click", () => {
-    state.mode = (btn as HTMLElement).dataset.mode as Mode;
-    modeButtons.forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-    mapContainer.style.cursor = state.mode === "select" ? "" : "crosshair";
-  });
-});
-
 // ── Sidebar inputs ──
 nameInput.addEventListener("input", () => { state.name = nameInput.value; });
 zoomInput.addEventListener("input", () => { state.zoom = parseFloat(zoomInput.value); });
+const bearingValueEl = document.getElementById("bearing-value")!;
 bearingInput.addEventListener("input", () => {
   state.bearing = parseFloat(bearingInput.value);
+  bearingValueEl.textContent = `${state.bearing}°`;
   (map as any).setBearing(state.bearing);
 });
 
@@ -403,6 +429,7 @@ function loadTrack(t: TrackDef) {
   nameInput.value = state.name;
   zoomInput.value = String(state.zoom);
   bearingInput.value = String(state.bearing);
+  document.getElementById("bearing-value")!.textContent = `${state.bearing}°`;
 
   map.setView(state.center, state.zoom);
   (map as any).setBearing(state.bearing);

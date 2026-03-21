@@ -1,5 +1,5 @@
 import { TelemetryManager } from "./telemetry";
-import { throttleToColor } from "./track-utils";
+import { speedToColor, throttleToColor, rpmToColor } from "./track-utils";
 import { inferGearFromRatio } from "../../server/src/gear";
 
 export interface ChartPanel {
@@ -12,53 +12,6 @@ const MAX_RPM = 7000;
 const MPH_SEGMENTS = 32;
 const TPS_SEGMENTS = 20;
 const RPM_SEGMENTS = 28;
-
-// Speed color ramp (mph): white → yellow → orange → red
-const SPEED_COLORS: [number, [number, number, number]][] = [
-  [0,   [255, 255, 255]],
-  [40,  [255, 255, 255]],
-  [50,  [241, 196, 15]],
-  [80,  [255, 107, 53]],
-  [120, [231, 76, 60]],
-];
-
-function speedColor(mph: number): string {
-  const kmh = mph / KMH_TO_MPH;
-  if (kmh <= SPEED_COLORS[0][0]) {
-    const [r, g, b] = SPEED_COLORS[0][1];
-    return `rgb(${r},${g},${b})`;
-  }
-  for (let i = 1; i < SPEED_COLORS.length; i++) {
-    if (kmh <= SPEED_COLORS[i][0]) {
-      const [s0, c0] = SPEED_COLORS[i - 1];
-      const [s1, c1] = SPEED_COLORS[i];
-      const t = (kmh - s0) / (s1 - s0);
-      const r = Math.round(c0[0] + (c1[0] - c0[0]) * t);
-      const g = Math.round(c0[1] + (c1[1] - c0[1]) * t);
-      const b = Math.round(c0[2] + (c1[2] - c0[2]) * t);
-      return `rgb(${r},${g},${b})`;
-    }
-  }
-  const [r, g, b] = SPEED_COLORS[SPEED_COLORS.length - 1][1];
-  return `rgb(${r},${g},${b})`;
-}
-
-// RPM color: white low → orange mid → red high
-function rpmColor(fraction: number): string {
-  if (fraction < 0.6) return "rgb(255, 255, 255)";
-  if (fraction < 0.8) {
-    const t = (fraction - 0.6) / 0.2;
-    const r = 255;
-    const g = Math.round(255 - (255 - 107) * t);
-    const b = Math.round(255 - (255 - 53) * t);
-    return `rgb(${r},${g},${b})`;
-  }
-  const t = (fraction - 0.8) / 0.2;
-  const r = Math.round(255 - (255 - 231) * t);
-  const g = Math.round(107 - (107 - 76) * t);
-  const b = Math.round(53 + (60 - 53) * t);
-  return `rgb(${r},${g},${b})`;
-}
 
 function createSegments(count: number, className: string): HTMLElement {
   const track = document.createElement("div");
@@ -91,9 +44,9 @@ function updateSegments(track: HTMLElement, fraction: number, colorFn?: (i: numb
   }
 }
 
-const speedColorFn = (i: number, n: number) => speedColor(((i + 1) / n) * MAX_MPH);
+const speedColorFn = (i: number, n: number) => speedToColor(((i + 1) / n) * MAX_MPH / KMH_TO_MPH);
 const throttleColorFn = (i: number, n: number) => throttleToColor(((i + 1) / n) * 100);
-const rpmColorFn = (i: number, n: number) => rpmColor((i + 1) / n);
+const rpmColorFn = (i: number, n: number) => rpmToColor((i + 1) / n);
 
 export function createPanels(mgr: TelemetryManager): ChartPanel[] {
   const container = document.getElementById("chart-speed")!;

@@ -160,7 +160,7 @@ describe("LapDetector", () => {
     const lap = events[0].lap;
     expect(lap.lap).toBe(1);
     expect(lap.time).toBeGreaterThan(10_000);
-    expect(lap.flag).toBe("clean");
+    expect(lap.flag).toBe("out"); // first lap is always an out lap
     expect(lap.startSeq).toBe(0);
     expect(lap.endSeq).toBe(wal.currentSeq);
   });

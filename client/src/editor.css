@@ -1,103 +1,9 @@
-@import "./fonts.css";
+@import "./base.css";
 
-:root {
-  --bg: #000000;
-  --panel-bg: #0a0a10;
-  --border: rgba(255, 255, 255, 0.10);
-  --border-bright: rgba(255, 255, 255, 0.20);
-  --accent: #ff7b45;
-  --accent-dim: rgba(255, 123, 69, 0.5);
-  --red: #ff4436;
-  --green: #3ddf80;
-  --text: #bbb;
-  --text-bright: #fff;
-  --text-dim: rgba(255, 255, 255, 0.35);
-  --font: "Berkeley Mono", "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
-}
-
-* { margin: 0; padding: 0; box-sizing: border-box; }
-
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font);
-  font-size: 13px;
-  letter-spacing: -0.03em;
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-/* scan lines */
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 9999;
-  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px);
-}
-
-/* ── Header ── */
 #status-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 16px;
-  background: #000000;
-  border-bottom: 1px solid var(--border-bright);
-  flex-shrink: 0;
-  position: relative;
   z-index: 1000;
   overflow: visible;
 }
-
-#status-bar::before {
-  content: "";
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent 0%, var(--accent) 20%, var(--accent) 80%, transparent 100%);
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.title {
-  font-weight: 700;
-  font-size: 13px;
-  letter-spacing: 3px;
-  color: var(--accent);
-  text-shadow: 0 0 10px rgba(255,107,53,0.4);
-}
-
-.title-jp {
-  font-size: 9px;
-  letter-spacing: 2px;
-  color: var(--text-dim);
-}
-
-.status-group {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.nav-link {
-  color: rgba(255,255,255,0.25);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 2px;
-  text-decoration: none;
-  border: 1px solid rgba(255,255,255,0.1);
-  padding: 3px 8px;
-}
-
-.nav-link:hover { color: var(--text-bright); border-color: rgba(255,255,255,0.3); }
 
 /* ── Header buttons ── */
 #btn-save {
@@ -168,6 +74,32 @@ body::after {
 
 #sidebar input:focus {
   outline: 1px solid var(--accent-dim);
+}
+
+#sidebar input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  background: var(--border-bright);
+  border-radius: 2px;
+  border: none;
+  outline: none;
+}
+
+#sidebar input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+#bearing-value {
+  font-size: 10px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── Mode buttons ── */
@@ -288,64 +220,6 @@ body::after {
   flex: 1;
   min-width: 0;
   position: relative;
-}
-
-.sat-toggle {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 900;
-  background: transparent;
-  border: 1px solid var(--border-bright);
-  color: var(--text);
-  font-family: var(--font);
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  padding: 3px 8px;
-  cursor: pointer;
-}
-
-.sat-toggle:hover {
-  border-color: var(--accent-dim);
-  color: var(--text-bright);
-}
-
-.sat-toggle.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-.leaflet-container {
-  background: var(--panel-bg) !important;
-}
-
-.leaflet-tile-pane {
-  filter: saturate(0.3) brightness(0.6);
-}
-
-.leaflet-control-attribution { display: none !important; }
-
-.leaflet-bar,
-.leaflet-bar a,
-.leaflet-control {
-  background: var(--panel-bg) !important;
-  color: var(--text) !important;
-  border-color: var(--border) !important;
-  box-shadow: none !important;
-}
-
-.leaflet-bar a:hover {
-  background: #1a1a24 !important;
-  color: var(--text-bright) !important;
-}
-
-.leaflet-container,
-.leaflet-container *,
-.leaflet-container:focus,
-.leaflet-container *:focus {
-  outline: none !important;
 }
 
 #finish-info {

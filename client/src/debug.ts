@@ -1,9 +1,7 @@
 import "./debug.css";
 import { propagateQueryParams } from "./nav";
 
-const REMOTE_URL = ((import.meta.env.VITE_SERVER_URL as string) ?? "http://gearados-nx.tail62d295.ts.net:4400").replace(/\/$/, "");
-const isLocal = new URLSearchParams(window.location.search).has("local");
-const SERVER_URL = isLocal ? "http://localhost:4400" : REMOTE_URL;
+import { SERVER_URL } from "./server-url";
 const MAX_PTS = 200;
 const container = document.getElementById("channels")!;
 const statusEl = document.getElementById("status")!;

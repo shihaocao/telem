@@ -1,38 +1,17 @@
-@import "./fonts.css";
+@import "./base.css";
 
+/* Debug overrides */
 :root {
-  --bg: #000000;
-  --panel-bg: #0a0a10;
   --border: rgba(255, 123, 69, 0.15);
   --border-bright: rgba(255, 123, 69, 0.35);
-  --accent: #ff7b45;
-  --accent-dim: rgba(255, 123, 69, 0.5);
-  --red: #ff4436;
-  --green: #3ddf80;
-  --amber: #e0b020;
   --text: #ddd;
-  --text-bright: #fff;
   --text-dim: rgba(255, 255, 255, 0.4);
-  --font: "Berkeley Mono", "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
 }
-
-* { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font);
-  font-size: 13px;
   padding: 16px;
-}
-
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 9999;
-  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px);
+  height: auto;
+  overflow: auto;
 }
 
 h1 {

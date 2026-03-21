@@ -1,0 +1,117 @@
+@import "./fonts.css";
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg: #000000;
+  --panel-bg: #0a0a10;
+  --border: rgba(255, 255, 255, 0.10);
+  --border-bright: rgba(255, 255, 255, 0.20);
+  --accent: #ff7b45;
+  --accent-dim: rgba(255, 123, 69, 0.5);
+  --accent-glow: rgba(255, 123, 69, 0.2);
+  --red: #ff4436;
+  --red-dim: rgba(255, 68, 54, 0.5);
+  --green: #3ddf80;
+  --amber: #e0b020;
+  --yellow: #ffd320;
+  --text: #bbb;
+  --text-bright: #fff;
+  --text-dim: rgba(255, 255, 255, 0.35);
+  --font: "Berkeley Mono", "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  letter-spacing: -0.03em;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* scan lines */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px);
+}
+
+/* ── Header ── */
+#status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 16px;
+  background: #000000;
+  border-bottom: 1px solid var(--border-bright);
+  flex-shrink: 0;
+  position: relative;
+}
+
+.header-left { display: flex; align-items: center; gap: 12px; }
+
+.title {
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 3px;
+  color: var(--accent);
+  text-shadow: 0 0 10px rgba(255, 123, 69, 0.4);
+}
+
+.title-jp { font-size: 9px; letter-spacing: 2px; color: var(--text-dim); }
+.title-sub { font-size: 9px; letter-spacing: 1px; color: rgba(255,255,255,0.2); font-weight: 600; }
+.status-group { display: flex; align-items: center; gap: 10px; }
+
+.nav-link {
+  color: rgba(255,255,255,0.25);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-decoration: none;
+  border: 1px solid rgba(255,255,255,0.1);
+  padding: 3px 8px;
+}
+
+.nav-link:hover { color: var(--text-bright); border-color: rgba(255,255,255,0.3); }
+
+.sidebar-section { display: flex; flex-direction: column; gap: 6px; }
+.sidebar-label { font-size: 9px; font-weight: 700; letter-spacing: 2px; color: var(--text-dim); text-transform: uppercase; }
+
+/* ── Leaflet shared ── */
+.leaflet-container { background: var(--panel-bg) !important; }
+.leaflet-tile-pane { filter: saturate(0.3) brightness(0.6); }
+.leaflet-control-attribution { display: none !important; }
+.leaflet-bar, .leaflet-bar a, .leaflet-control { background: var(--panel-bg) !important; color: var(--text) !important; border-color: var(--border) !important; box-shadow: none !important; }
+.leaflet-bar a:hover { background: #1a1a24 !important; color: var(--text-bright) !important; }
+.leaflet-container, .leaflet-container *, .leaflet-container:focus, .leaflet-container *:focus { outline: none !important; }
+
+/* ── Sat toggle ── */
+.sat-toggle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 900;
+  background: transparent;
+  border: 1px solid var(--border-bright);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.sat-toggle:hover { border-color: var(--accent-dim); color: var(--text-bright); }
+.sat-toggle.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* ── Track labels ── */
+.turn-label { color: rgba(255,255,255,0.45); font-size: 9px; font-weight: 600; text-align: center; line-height: 14px; text-shadow: 0 0 3px rgba(0,0,0,0.9); }
+.sf-label { color: var(--red); font-weight: 700; }

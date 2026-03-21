@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { optimalGear, rpmFromSpeedAndGear } from "../src/gear.js";
+import { tpsToVoltage, mapToVoltage, ectToVoltage } from "../src/sensors.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TRACKS_DIR = resolve(__dirname, "../../tracks");
@@ -243,34 +244,6 @@ function step(dt: number): void {
   trackDist += (speed / 3.6) * dt;
 }
 
-// ── Voltage conversions ──
-function tpsToVoltage(pct: number): number { return pct * 4.0 / 100 + 0.5; }
-function mapToVoltage(kpa: number): number { return (kpa - 20) / 32.4 + 0.5; }
-
-const ECT_PULLUP = 6.65;
-const ECT_TABLE: [number, number][] = [
-  [12.0, -20], [5.0, 0], [2.0, 20], [1.2, 40],
-  [0.7, 60], [0.4, 80], [0.2, 100], [0.1, 120],
-];
-
-function ectToVoltage(tempC: number): number {
-  let rKohm: number;
-  if (tempC <= ECT_TABLE[0][1]) rKohm = ECT_TABLE[0][0];
-  else if (tempC >= ECT_TABLE[ECT_TABLE.length - 1][1]) rKohm = ECT_TABLE[ECT_TABLE.length - 1][0];
-  else {
-    rKohm = ECT_TABLE[0][0];
-    for (let i = 0; i < ECT_TABLE.length - 1; i++) {
-      const [r1, t1] = ECT_TABLE[i];
-      const [r2, t2] = ECT_TABLE[i + 1];
-      if (tempC >= t1 && tempC <= t2) {
-        const frac = (tempC - t1) / (t2 - t1);
-        rKohm = Math.exp(Math.log(r1) + frac * (Math.log(r2) - Math.log(r1)));
-        break;
-      }
-    }
-  }
-  return 5 * rKohm / (ECT_PULLUP + rKohm);
-}
 
 const ADC_NOISE = 0.05;
 

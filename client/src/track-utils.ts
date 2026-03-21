@@ -62,64 +62,50 @@ export function trackProgress(trackPts: [number, number][], lat: number, lon: nu
   return bestProgress;
 }
 
-// Speed-to-color (km/h): white (0-64) → yellow (64-80) → orange (80-129) → red (129+)
-const SPEED_COLORS: [number, [number, number, number]][] = [
-  [0,   [255, 255, 255]],
-  [64,  [255, 255, 255]],
-  [80,  [241, 196, 15]],
-  [129, [255, 107, 53]],
-  [193, [231, 76, 60]],
-];
+// ── Color ramp interpolation ──
 
-export function speedToColor(kmh: number): string {
-  if (kmh <= SPEED_COLORS[0][0]) {
-    const [r, g, b] = SPEED_COLORS[0][1];
+type ColorStops = [number, [number, number, number]][];
+
+/** Generic multi-stop linear color ramp interpolation. */
+export function interpolateColorRamp(value: number, stops: ColorStops): string {
+  if (value <= stops[0][0]) {
+    const [r, g, b] = stops[0][1];
     return `rgb(${r},${g},${b})`;
   }
-  for (let i = 1; i < SPEED_COLORS.length; i++) {
-    if (kmh <= SPEED_COLORS[i][0]) {
-      const [s0, c0] = SPEED_COLORS[i - 1];
-      const [s1, c1] = SPEED_COLORS[i];
-      const t = (kmh - s0) / (s1 - s0);
+  for (let i = 1; i < stops.length; i++) {
+    if (value <= stops[i][0]) {
+      const [s0, c0] = stops[i - 1];
+      const [s1, c1] = stops[i];
+      const t = (value - s0) / (s1 - s0);
       const r = Math.round(c0[0] + (c1[0] - c0[0]) * t);
       const g = Math.round(c0[1] + (c1[1] - c0[1]) * t);
       const b = Math.round(c0[2] + (c1[2] - c0[2]) * t);
       return `rgb(${r},${g},${b})`;
     }
   }
-  const [r, g, b] = SPEED_COLORS[SPEED_COLORS.length - 1][1];
+  const [r, g, b] = stops[stops.length - 1][1];
   return `rgb(${r},${g},${b})`;
 }
 
-/** Throttle-to-color (0-100%): green (0-10) → white (10-40) → yellow (40-70) → orange (70-90) → red (90+) */
-const THROTTLE_COLORS: [number, [number, number, number]][] = [
-  [0,   [46, 204, 113]],
-  [10,  [46, 204, 113]],
-  [40,  [255, 255, 255]],
-  [70,  [241, 196, 15]],
-  [90,  [255, 107, 53]],
-  [100, [231, 76, 60]],
+// Speed (km/h): white → yellow → orange → red
+const SPEED_STOPS: ColorStops = [
+  [0, [255, 255, 255]], [64, [255, 255, 255]], [80, [241, 196, 15]],
+  [129, [255, 107, 53]], [193, [231, 76, 60]],
 ];
+export const speedToColor = (kmh: number) => interpolateColorRamp(kmh, SPEED_STOPS);
 
-export function throttleToColor(pct: number): string {
-  if (pct <= THROTTLE_COLORS[0][0]) {
-    const [r, g, b] = THROTTLE_COLORS[0][1];
-    return `rgb(${r},${g},${b})`;
-  }
-  for (let i = 1; i < THROTTLE_COLORS.length; i++) {
-    if (pct <= THROTTLE_COLORS[i][0]) {
-      const [s0, c0] = THROTTLE_COLORS[i - 1];
-      const [s1, c1] = THROTTLE_COLORS[i];
-      const t = (pct - s0) / (s1 - s0);
-      const r = Math.round(c0[0] + (c1[0] - c0[0]) * t);
-      const g = Math.round(c0[1] + (c1[1] - c0[1]) * t);
-      const b = Math.round(c0[2] + (c1[2] - c0[2]) * t);
-      return `rgb(${r},${g},${b})`;
-    }
-  }
-  const [r, g, b] = THROTTLE_COLORS[THROTTLE_COLORS.length - 1][1];
-  return `rgb(${r},${g},${b})`;
-}
+// Throttle (%): green → white → yellow → orange → red
+const THROTTLE_STOPS: ColorStops = [
+  [0, [46, 204, 113]], [10, [46, 204, 113]], [40, [255, 255, 255]],
+  [70, [241, 196, 15]], [90, [255, 107, 53]], [100, [231, 76, 60]],
+];
+export const throttleToColor = (pct: number) => interpolateColorRamp(pct, THROTTLE_STOPS);
+
+// RPM (fraction 0-1): white → orange → red
+const RPM_STOPS: ColorStops = [
+  [0, [255, 255, 255]], [0.6, [255, 255, 255]], [0.8, [255, 107, 53]], [1.0, [231, 76, 60]],
+];
+export const rpmToColor = (fraction: number) => interpolateColorRamp(fraction, RPM_STOPS);
 
 const MAX_TRAIL_SEGMENTS = 60;
 

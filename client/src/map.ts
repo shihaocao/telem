@@ -9,9 +9,10 @@ const TRAIL_MAX = 3000;
 const MARKER_COLOR = "#fff";
 const TRACK_OUTLINE_COLOR = "rgba(255, 255, 255, 0.3)";
 
-const TILES = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
 const TILES_NOLABELS = "https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png";
+const TILES_SAT = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 const TILE_OPTS: L.TileLayerOptions = { maxZoom: 20, subdomains: "abcd" };
+const TILE_OPTS_SAT: L.TileLayerOptions = { maxZoom: 20 };
 
 export interface MapPanels {
   update: () => void;
@@ -29,7 +30,7 @@ export function createMaps(
     zoomControl: false,
     attributionControl: false,
   }).setView([0, 0], 2);
-  L.tileLayer(TILES, TILE_OPTS).addTo(followMap);
+  L.tileLayer(TILES_SAT, TILE_OPTS_SAT).addTo(followMap);
 
   let followTrailSegments: L.Polyline[] = [];
 

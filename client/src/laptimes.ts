@@ -1,6 +1,7 @@
 import { TelemetryManager } from "./telemetry";
 import { getActiveTrack } from "./track";
 import { trackProgress } from "./track-utils";
+import { formatTime, getBestLapTime } from "./format";
 
 interface Lap {
   lap: number;
@@ -75,13 +76,6 @@ export function createLapTimes(
   const listEl = wrapper.querySelector("#laptimes-list")!;
   const reviewLink = wrapper.querySelector("#laptimes-review") as HTMLAnchorElement;
 
-  function formatTime(ms: number): string {
-    if (ms <= 0) return "0:00.000";
-    const totalSec = ms / 1000;
-    const min = Math.floor(totalSec / 60);
-    const sec = totalSec % 60;
-    return `${min}:${sec.toFixed(3).padStart(6, "0")}`;
-  }
 
   // ── API ──
   async function api(method: string, path: string, body?: unknown): Promise<any> {
@@ -233,10 +227,7 @@ export function createLapTimes(
 
   // ── Render ──
   function getBestTime(): number | null {
-    if (!session) return null;
-    const clean = session.laps.filter((l) => l.flag === "clean");
-    if (clean.length === 0) return null;
-    return Math.min(...clean.map((l) => l.time));
+    return session ? getBestLapTime(session.laps) : null;
   }
 
   function renderList() {

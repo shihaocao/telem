@@ -1,15 +1,7 @@
 import { TelemetryEntry, ConnectionState, ChannelBuffer } from "./types";
+import { SERVER_URL } from "./server-url";
 
 const MAX_POINTS = 6000; // ~2 min at 50Hz
-
-const REMOTE_URL = ((import.meta.env.VITE_SERVER_URL as string) ?? "http://gearados-nx.tail62d295.ts.net:4400").replace(/\/$/, "");
-const LOCAL_URL = "http://localhost:4400";
-const isLocal = new URLSearchParams(window.location.search).has("local");
-const SERVER_URL = isLocal ? LOCAL_URL : REMOTE_URL;
-
-export function getServerUrl(): string {
-  return SERVER_URL;
-}
 
 export class TelemetryManager {
   readonly serverUrl = SERVER_URL;

@@ -54,6 +54,7 @@
 import { createInterface } from "readline";
 import { createReadStream } from "fs";
 import { execSync } from "child_process";
+import { tpsToPercent, mapToKpa, ectToTempC } from "../src/sensors.js";
 
 const SERIAL_PORT = process.argv[2] || "/dev/ttyACM0";
 const INGEST_URL = process.env.INGEST_URL || "http://localhost:4400/ingest";
@@ -66,48 +67,6 @@ const BRAKE_THRESHOLD_V = 6.0; // ~6V means brake light circuit is energized
 
 // --- Sensor conversions ---
 
-function tpsToPercent(v: number): number {
-  return Math.max(0, Math.min(100, ((v - 0.5) / 4.0) * 100));
-}
-
-function mapToKpa(v: number): number {
-  return (v - 0.5) * 32.4 + 20;
-}
-
-const ECT_PULLUP_KOHM = 6.65; // Honda ECU internal pull-up, derived from 0.25V @ 190°F (87.8°C)
-
-/**
- * ECT resistance-to-temperature table from Honda FSM:
- *   12.0 kΩ → -20°C    0.7 kΩ →  60°C
- *    5.0 kΩ →   0°C    0.4 kΩ →  80°C
- *    2.0 kΩ →  20°C    0.2 kΩ → 100°C
- *    1.2 kΩ →  40°C    0.1 kΩ → 120°C
- *
- * The Mega reads voltage from a voltage divider: V = 5 * R_therm / (R_pullup + R_therm)
- * Conversion: voltage → resistance → temperature (log interpolation on R-T table)
- */
-const ECT_TABLE: [number, number][] = [
-  [12.0, -20], [5.0, 0], [2.0, 20], [1.2, 40],
-  [0.7, 60], [0.4, 80], [0.2, 100], [0.1, 120],
-];
-
-function ectToTempC(v: number): number {
-  if (v <= 0 || v >= 5.0) return v <= 0 ? 120 : -20;
-  const rKohm = ECT_PULLUP_KOHM * v / (5.0 - v);
-
-  if (rKohm >= ECT_TABLE[0][0]) return ECT_TABLE[0][1];
-  if (rKohm <= ECT_TABLE[ECT_TABLE.length - 1][0]) return ECT_TABLE[ECT_TABLE.length - 1][1];
-
-  for (let i = 0; i < ECT_TABLE.length - 1; i++) {
-    const [r1, t1] = ECT_TABLE[i];
-    const [r2, t2] = ECT_TABLE[i + 1];
-    if (rKohm <= r1 && rKohm >= r2) {
-      const frac = (Math.log(r1) - Math.log(rKohm)) / (Math.log(r1) - Math.log(r2));
-      return t1 + frac * (t2 - t1);
-    }
-  }
-  return ECT_TABLE[ECT_TABLE.length - 1][1];
-}
 
 function vssToKph(hz: number): number {
   return hz * 3600 / VSS_PULSES_PER_KM;
