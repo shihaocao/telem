@@ -245,8 +245,8 @@ async function handleWalRange(url: URL, res: http.ServerResponse, wal: WalEngine
   }
   const channelsParam = url.searchParams.get("channels");
   const channels = channelsParam ? new Set(channelsParam.split(",")) : undefined;
-  const entries = await wal.getEntriesInRange(startSeq, endSeq, channels);
-  json(res, 200, { entries, count: entries.length });
+  const ticks = await wal.getTicksInRange(startSeq, endSeq, channels);
+  json(res, 200, { ticks, count: ticks.length });
 }
 
 // --- Session SSE stream ---

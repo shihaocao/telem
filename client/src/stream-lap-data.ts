@@ -77,25 +77,15 @@ async function loadBestCurve(): Promise<void> {
   try {
     const data = await api("GET",
       `/wal/range?start_seq=${best.startSeq}&end_seq=${best.endSeq}&channels=gps_lat,gps_lon`);
-    const entries: { ts: number; channel: string; value: number }[] = data.entries;
-
-    const byTs = new Map<number, { lat?: number; lon?: number }>();
-    for (const e of entries) {
-      let rec = byTs.get(e.ts);
-      if (!rec) { rec = {}; byTs.set(e.ts, rec); }
-      if (e.channel === "gps_lat") rec.lat = e.value;
-      else if (e.channel === "gps_lon") rec.lon = e.value;
-    }
+    const ticks: { ts: number; d: Record<string, number> }[] = data.ticks;
 
     bestCurve = [];
-    const sortedTs = Array.from(byTs.keys()).sort((a, b) => a - b);
-    const startTs = sortedTs[0] ?? 0;
-    for (const ts of sortedTs) {
-      const rec = byTs.get(ts)!;
-      if (rec.lat == null || rec.lon == null) continue;
-      const p = trackProgress(trackDef.track, rec.lat, rec.lon);
+    const startTs = ticks[0]?.ts ?? 0;
+    for (const tick of ticks) {
+      if (tick.d.gps_lat == null || tick.d.gps_lon == null) continue;
+      const p = trackProgress(trackDef.track, tick.d.gps_lat, tick.d.gps_lon);
       const norm = ((p - finishProgress) % 1 + 1) % 1;
-      bestCurve.push({ norm, elapsed: ts - startTs });
+      bestCurve.push({ norm, elapsed: tick.ts - startTs });
     }
   } catch {
     bestCurve = [];

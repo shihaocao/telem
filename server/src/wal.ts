@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-/** Public API entry — always single-channel */
+/** Single-channel entry — used for per-channel indexing, SSE events, emit */
 export interface WalEntry {
   seq: number;
   ts: number;
@@ -10,7 +10,14 @@ export interface WalEntry {
   value: unknown;
 }
 
-/** Disk format — can be single-channel or multi-channel */
+/** Batched tick — one per timestamp, all channels merged. Matches disk format. */
+export interface WalTick {
+  seq: number;
+  ts: number;
+  d: Record<string, unknown>;
+}
+
+/** Disk format — can be single-channel (legacy) or multi-channel (compact) */
 interface WalLine {
   seq: number;
   ts: number;
@@ -53,6 +60,20 @@ function parseLine(raw: string): WalEntry[] {
   try {
     return explodeLine(JSON.parse(raw) as WalLine);
   } catch { return []; }
+}
+
+/** Parse a WAL line into a WalTick (no explosion) */
+function parseTickLine(raw: string): WalTick | null {
+  if (raw.length === 0 || raw.startsWith("#")) return null;
+  try {
+    const line = JSON.parse(raw) as WalLine;
+    if (line.d) return { seq: line.seq, ts: line.ts, d: line.d };
+    // Legacy single-channel → wrap into d
+    if (line.channel !== undefined && line.value !== undefined) {
+      return { seq: line.seq, ts: line.ts, d: { [line.channel]: line.value } };
+    }
+    return null;
+  } catch { return null; }
 }
 
 export class WalEngine extends EventEmitter {
@@ -242,6 +263,42 @@ export class WalEngine extends EventEmitter {
         for (const e of entries) {
           if (channels && !channels.has(e.channel)) continue;
           result.push(e);
+        }
+      }
+    }
+    return result;
+  }
+
+  /** Return batched ticks in range — no per-channel explosion, fast for bulk replay */
+  async getTicksInRange(startSeq: number, endSeq: number, channels?: Set<string>): Promise<WalTick[]> {
+    const result: WalTick[] = [];
+    const files = (await fs.promises.readdir(this.walDir)).filter((f) => f.startsWith("wal.")).sort();
+
+    for (const file of files) {
+      const filePath = path.join(this.walDir, file);
+      const range = await this.readFileRange(filePath);
+      if (range) {
+        if (range.maxSeq < startSeq) continue;
+        if (range.minSeq > endSeq) break;
+      }
+
+      const content = await fs.promises.readFile(filePath, "utf-8");
+      for (const raw of content.split("\n")) {
+        const tick = parseTickLine(raw);
+        if (!tick) continue;
+        if (tick.seq < startSeq) continue;
+        if (tick.seq > endSeq) return result;
+
+        if (channels) {
+          // Filter to requested channels only
+          const filtered: Record<string, unknown> = {};
+          let hasAny = false;
+          for (const ch of channels) {
+            if (ch in tick.d) { filtered[ch] = tick.d[ch]; hasAny = true; }
+          }
+          if (hasAny) result.push({ seq: tick.seq, ts: tick.ts, d: filtered });
+        } else {
+          result.push(tick);
         }
       }
     }

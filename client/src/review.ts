@@ -16,7 +16,7 @@ const TILE_OPTS_SAT: L.TileLayerOptions = { maxZoom: 20 };
 
 interface Lap { lap: number; time: number; flag: "clean" | "yellow" | "pit" | "out" | "in"; track: string; startSeq: number; endSeq: number; }
 interface Session { id: string; track: string; driver: string; createdAt: number; running: boolean; laps: Lap[]; }
-interface WalEntry { seq: number; ts: number; channel: string; value: number; }
+interface WalTick { seq: number; ts: number; d: Record<string, number>; }
 
 // ── State ──
 const params = new URLSearchParams(window.location.search);
@@ -26,7 +26,7 @@ let trackDef: TrackDef = TRACKS[trackId] ?? TRACKS.sonoma;
 let sessions: Session[] = [];
 let session: Session | null = null;
 let selectedLapIdx = -1;
-let lapEntries: WalEntry[] = [];
+let lapTicks: WalTick[] = [];
 let lapCoords: [number, number][] = [];
 let lapSpeeds: number[] = [];
 let lapThrottles: number[] = [];
@@ -546,7 +546,7 @@ function clearLapView() {
   if (posMarker) { posMarker.remove(); posMarker = null; }
   lapListEl.innerHTML = "";
   lapCoords = []; lapSpeeds = []; lapThrottles = []; lapGx = []; lapGy = [];
-  lapRpms = []; lapGears = []; lapBrakes = []; lapTimestamps = []; lapEntries = [];
+  lapRpms = []; lapGears = []; lapBrakes = []; lapTimestamps = []; lapTicks = [];
   seekEl.value = "0"; seekTimeEl.textContent = "0:00.000"; seekEpochEl.textContent = "--";
   speedValueEl.textContent = "--";
   throttleValueEl.textContent = "--";
@@ -596,29 +596,19 @@ async function selectLap(idx: number, forceRefresh = false) {
 
   const lap = session.laps[idx];
   const channels = "gps_lat,gps_lon,gps_speed,gps_heading,throttle_pos,g_force_x,g_force_y,rpm,gear,brake,coolant_temp,manifold_pressure";
-  // Use a short cache key — the full URL with channels is too long and the data can be large
   const cacheKey = `/lap/${lap.startSeq}-${lap.endSeq}`;
   const data = await apiFetch(`/wal/range?start_seq=${lap.startSeq}&end_seq=${lap.endSeq}&channels=${channels}`, "GET", undefined, forceRefresh, cacheKey);
-  lapEntries = data.entries;
+  lapTicks = data.ticks;
 
-  // Sort all entries by timestamp, then build per-GPS-tick arrays
-  // carrying forward the last known value for non-GPS channels
-  lapEntries.sort((a, b) => a.ts - b.ts);
-
+  // Ticks are already grouped by timestamp — just carry forward and extract arrays
   const latest: Record<string, number> = {};
   lapCoords = []; lapSpeeds = []; lapThrottles = []; lapGx = []; lapGy = [];
   lapRpms = []; lapGears = []; lapBrakes = []; lapTimestamps = [];
 
-  // Group entries by timestamp
-  let i = 0;
-  while (i < lapEntries.length) {
-    const ts = lapEntries[i].ts;
-    // Absorb all entries at this timestamp
-    while (i < lapEntries.length && lapEntries[i].ts === ts) {
-      latest[lapEntries[i].channel] = lapEntries[i].value;
-      i++;
-    }
-    // Only emit a data point when we have a GPS fix
+  for (const tick of lapTicks) {
+    // Merge tick channels into carry-forward state
+    for (const [ch, val] of Object.entries(tick.d)) latest[ch] = val as number;
+
     if (latest.gps_lat !== undefined && latest.gps_lon !== undefined) {
       lapCoords.push([latest.gps_lat, latest.gps_lon]);
       lapSpeeds.push(latest.gps_speed ?? 0);
@@ -628,7 +618,7 @@ async function selectLap(idx: number, forceRefresh = false) {
       lapRpms.push(latest.rpm ?? 0);
       lapGears.push(latest.gear ?? 0);
       lapBrakes.push(latest.brake ?? 0);
-      lapTimestamps.push(ts);
+      lapTimestamps.push(tick.ts);
     }
   }
 
