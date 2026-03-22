@@ -40,7 +40,7 @@ detect_res() {
     return
   fi
 
-  for res in 1920x1080 1280x720; do
+  for res in 1920x1080 1280x720 640x480; do
     if echo "$mjpg_section" | grep -q "${res}"; then
       echo "$res"
       return
@@ -79,13 +79,17 @@ for i in "${!DEVICES[@]}"; do
 
   res=$(detect_res "$dev")
   if [ "$res" = "none" ]; then
-    echo "Skipping ${dev}: no MJPEG 1080p or 720p support"
+    echo "Skipping ${dev}: no MJPEG support"
     continue
+  fi
+
+  # Secondary cameras capped to 720p
+  if [ "$STREAM_COUNT" -gt 0 ]; then
+    res="1280x720"
   fi
 
   w=${res%x*}
   h=${res#*x}
-
 
   if [ "$STREAM_COUNT" -eq 0 ]; then
     # First stream: video only (with clock overlay)
