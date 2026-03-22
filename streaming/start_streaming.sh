@@ -85,7 +85,7 @@ for i in "${!DEVICES[@]}"; do
       ! nvvidconv ! 'video/x-raw(memory:NVMM)' \
       ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
       ! h264parse ! queue max-size-time=500000000 leaky=downstream ! mpegtsmux alignment=7 \
-      ! srtsink uri="srt://${TAILSCALE_HOST}:${port}?mode=caller" latency=${SRT_LATENCY} sync=false &
+      ! srtsink uri="srt://${TAILSCALE_HOST}:${port}?mode=caller" wait-for-connection=false latency=${SRT_LATENCY} sync=false &
   else
     # Subsequent streams: video only
     echo "Streaming ${dev} (MJPEG ${res}) → srt://${TAILSCALE_HOST}:${port} ..."
@@ -95,7 +95,7 @@ for i in "${!DEVICES[@]}"; do
       ! jpegdec ! nvvidconv flip-method=2 ! 'video/x-raw(memory:NVMM)' \
       ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
       ! h264parse ! queue max-size-time=500000000 leaky=downstream ! mpegtsmux alignment=7 \
-      ! srtsink uri="srt://${TAILSCALE_HOST}:${port}?mode=caller" latency=${SRT_LATENCY} sync=false &
+      ! srtsink uri="srt://${TAILSCALE_HOST}:${port}?mode=caller" wait-for-connection=false latency=${SRT_LATENCY} sync=false &
   fi
   PIDS+=($!)
   STREAM_COUNT=$((STREAM_COUNT + 1))
@@ -110,7 +110,7 @@ gst-launch-1.0 -e \
   ! 'audio/x-raw,rate=48000,channels=1' \
   ! voaacenc bitrate=64000 \
   ! aacparse ! mpegtsmux \
-  ! srtsink uri="srt://${TAILSCALE_HOST}:${AUDIO_PORT}?mode=caller" latency=${SRT_LATENCY} sync=false &
+  ! srtsink uri="srt://${TAILSCALE_HOST}:${AUDIO_PORT}?mode=caller" wait-for-connection=false latency=${SRT_LATENCY} sync=false &
 PIDS+=($!)
 
 # Apply C930e settings after pipelines open the device
