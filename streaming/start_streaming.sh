@@ -110,11 +110,11 @@ done
 # Audio-only stream on fixed port 9002
 echo "Streaming audio (LavMicro-U) → srt://${TAILSCALE_HOST}:${AUDIO_PORT} ..."
 gst-launch-1.0 \
-  alsasrc device=hw:LavMicroU,0 provide-clock=true slave-method=skew \
-  ! queue max-size-time=500000000 leaky=downstream ! audioconvert ! audioresample \
+  alsasrc device=hw:LavMicroU,0 provide-clock=true slave-method=skew buffer-time=40000 latency-time=10000 \
+  ! queue max-size-time=50000000 leaky=downstream ! audioconvert ! audioresample \
   ! 'audio/x-raw,rate=48000,channels=1' \
-  ! voaacenc bitrate=64000 \
-  ! aacparse ! mpegtsmux \
+  ! opusenc bitrate=64000 frame-size=10 audio-type=voice \
+  ! opusparse ! mpegtsmux alignment=7 \
   ! srtsink uri="srt://${TAILSCALE_HOST}:${AUDIO_PORT}?mode=caller" latency=${SRT_LATENCY} sync=false &
 PIDS+=($!)
 
