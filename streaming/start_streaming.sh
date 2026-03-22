@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Stream all webcams + audio from Jetson to Mac over SRT (MPEG-TS)
-# Each camera gets its own port: 9000, 9001, ...
-# Audio gets its own separate stream on the next port after video
+# Ports: 9000, 9001 for video (max 2 cameras), 9002 for audio
 set -euo pipefail
 
 export TAILSCALE_HOST=100.99.198.13
 BASE_PORT=9000
+AUDIO_PORT=9002
+MAX_VIDEO_STREAMS=2
 SRT_LATENCY=50
 
 # Find all video capture devices (skip metadata/control nodes)
@@ -61,6 +62,11 @@ done
 PIDS=()
 STREAM_COUNT=0
 for i in "${!DEVICES[@]}"; do
+  if [ "$STREAM_COUNT" -ge "$MAX_VIDEO_STREAMS" ]; then
+    echo "Reached max video streams ($MAX_VIDEO_STREAMS), skipping remaining cameras"
+    break
+  fi
+
   dev="${DEVICES[$i]}"
   port=$((BASE_PORT + STREAM_COUNT))
 
@@ -85,7 +91,7 @@ for i in "${!DEVICES[@]}"; do
       ! nvvidconv ! 'video/x-raw(memory:NVMM)' \
       ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
       ! h264parse ! queue max-size-time=500000000 leaky=downstream ! mpegtsmux alignment=7 \
-      ! srtsink uri="srt://${TAILSCALE_HOST}:${port}?mode=caller" wait-for-connection=false latency=${SRT_LATENCY} sync=false &
+      ! srtsink uri="srt://${TAILSCALE_HOST}:${port}?mode=caller" latency=${SRT_LATENCY} sync=false &
   else
     # Subsequent streams: video only
     echo "Streaming ${dev} (MJPEG ${res}) → srt://${TAILSCALE_HOST}:${port} ..."
@@ -95,14 +101,13 @@ for i in "${!DEVICES[@]}"; do
       ! jpegdec ! nvvidconv flip-method=2 ! 'video/x-raw(memory:NVMM)' \
       ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
       ! h264parse ! queue max-size-time=500000000 leaky=downstream ! mpegtsmux alignment=7 \
-      ! srtsink uri="srt://${TAILSCALE_HOST}:${port}?mode=caller" wait-for-connection=false latency=${SRT_LATENCY} sync=false &
+      ! srtsink uri="srt://${TAILSCALE_HOST}:${port}?mode=caller" latency=${SRT_LATENCY} sync=false &
   fi
   PIDS+=($!)
   STREAM_COUNT=$((STREAM_COUNT + 1))
 done
 
-# Audio-only stream on next port after video
-AUDIO_PORT=$((BASE_PORT + STREAM_COUNT))
+# Audio-only stream on fixed port 9002
 echo "Streaming audio (LavMicro-U) → srt://${TAILSCALE_HOST}:${AUDIO_PORT} ..."
 gst-launch-1.0 -e \
   alsasrc device=hw:LavMicroU,0 provide-clock=true slave-method=skew \
@@ -110,7 +115,7 @@ gst-launch-1.0 -e \
   ! 'audio/x-raw,rate=48000,channels=1' \
   ! voaacenc bitrate=64000 \
   ! aacparse ! mpegtsmux \
-  ! srtsink uri="srt://${TAILSCALE_HOST}:${AUDIO_PORT}?mode=caller" wait-for-connection=false latency=${SRT_LATENCY} sync=false &
+  ! srtsink uri="srt://${TAILSCALE_HOST}:${AUDIO_PORT}?mode=caller" latency=${SRT_LATENCY} sync=false &
 PIDS+=($!)
 
 # Apply C930e settings after pipelines open the device
@@ -138,4 +143,14 @@ cleanup() {
 }
 trap cleanup SIGINT SIGTERM
 
-wait
+# Wait for any child to exit — if a pipeline dies, kill everything and fail
+while true; do
+  for pid in "${PIDS[@]}"; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      echo "Process $pid died, shutting down all streams"
+      cleanup
+      exit 1
+    fi
+  done
+  sleep 1
+done
