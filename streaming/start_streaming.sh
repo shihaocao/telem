@@ -128,7 +128,6 @@ if [ -n "$C930E_DEV" ]; then
     --set-ctrl=backlight_compensation=0 \
     --set-ctrl=brightness=128 \
     && echo "Applied C930e settings") &
-  PIDS+=($!)
 fi
 
 echo "All streams started. PIDs: ${PIDS[*]}"
