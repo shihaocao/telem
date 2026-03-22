@@ -7,7 +7,7 @@ export TAILSCALE_HOST=100.99.198.13
 BASE_PORT=9000
 AUDIO_PORT=9002
 MAX_VIDEO_STREAMS=2
-SRT_LATENCY=50
+SRT_LATENCY=100
 
 # Find all video capture devices (skip metadata/control nodes)
 DEVICES=()
@@ -89,8 +89,8 @@ for i in "${!DEVICES[@]}"; do
       ! jpegdec \
       ! clockoverlay time-format="%Y-%m-%d %H:%M:%S %Z" halignment=left valignment=bottom font-desc="monospace 6" shaded-background=true \
       ! nvvidconv ! 'video/x-raw(memory:NVMM)' \
-      ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
-      ! h264parse ! queue max-size-time=500000000 leaky=downstream ! mpegtsmux alignment=7 \
+      ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=15 insert-sps-pps=true \
+      ! h264parse ! queue max-size-time=200000000 leaky=downstream ! mpegtsmux alignment=7 \
       ! srtsink uri="srt://${TAILSCALE_HOST}:${port}?mode=caller" latency=${SRT_LATENCY} sync=false &
   else
     # Subsequent streams: video only
@@ -99,8 +99,8 @@ for i in "${!DEVICES[@]}"; do
       v4l2src device="${dev}" \
       ! "image/jpeg,width=${w},height=${h},framerate=30/1" \
       ! jpegdec ! nvvidconv flip-method=2 ! 'video/x-raw(memory:NVMM)' \
-      ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
-      ! h264parse ! queue max-size-time=500000000 leaky=downstream ! mpegtsmux alignment=7 \
+      ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=15 insert-sps-pps=true \
+      ! h264parse ! queue max-size-time=200000000 leaky=downstream ! mpegtsmux alignment=7 \
       ! srtsink uri="srt://${TAILSCALE_HOST}:${port}?mode=caller" latency=${SRT_LATENCY} sync=false &
   fi
   PIDS+=($!)
@@ -111,7 +111,7 @@ done
 echo "Streaming audio (LavMicro-U) → srt://${TAILSCALE_HOST}:${AUDIO_PORT} ..."
 gst-launch-1.0 \
   alsasrc device=hw:LavMicroU,0 provide-clock=true slave-method=skew buffer-time=40000 latency-time=10000 \
-  ! queue max-size-time=50000000 leaky=downstream ! audioconvert ! audioresample \
+  ! queue max-size-time=200000000 leaky=downstream ! audioconvert ! audioresample \
   ! 'audio/x-raw,rate=48000,channels=1' \
   ! opusenc bitrate=64000 frame-size=10 audio-type=voice \
   ! opusparse ! mpegtsmux alignment=7 \
