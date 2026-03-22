@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Stream all webcams + audio from Jetson to Mac over SRT (MPEG-TS)
 # Each camera gets its own port: 9000, 9001, ...
-# Audio is muxed into the first stream
+# Audio gets its own separate stream on the next port after video
 set -euo pipefail
 
 export TAILSCALE_HOST=100.99.198.13
@@ -75,8 +75,8 @@ for i in "${!DEVICES[@]}"; do
 
 
   if [ "$STREAM_COUNT" -eq 0 ]; then
-    # First stream: video + audio muxed
-    echo "Streaming ${dev} (MJPEG ${res} + audio) → srt://${TAILSCALE_HOST}:${port} ..."
+    # First stream: video only (with clock overlay)
+    echo "Streaming ${dev} (MJPEG ${res}) → srt://${TAILSCALE_HOST}:${port} ..."
     gst-launch-1.0 -e \
       v4l2src device="${dev}" \
       ! "image/jpeg,width=${w},height=${h},framerate=30/1" \
@@ -84,13 +84,7 @@ for i in "${!DEVICES[@]}"; do
       ! clockoverlay time-format="%Y-%m-%d %H:%M:%S %Z" halignment=left valignment=bottom font-desc="monospace 6" shaded-background=true \
       ! nvvidconv ! 'video/x-raw(memory:NVMM)' \
       ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
-      ! h264parse ! mux. \
-      alsasrc device=hw:C930e,0 \
-      ! queue ! audioconvert ! audioresample \
-      ! 'audio/x-raw,rate=48000,channels=1' \
-      ! voaacenc bitrate=64000 \
-      ! aacparse ! mux. \
-      mpegtsmux name=mux alignment=7 \
+      ! h264parse ! queue max-size-time=500000000 leaky=downstream ! mpegtsmux alignment=7 \
       ! srtsink uri="srt://${TAILSCALE_HOST}:${port}?mode=caller" latency=${SRT_LATENCY} sync=false &
   else
     # Subsequent streams: video only
@@ -100,12 +94,24 @@ for i in "${!DEVICES[@]}"; do
       ! "image/jpeg,width=${w},height=${h},framerate=30/1" \
       ! jpegdec ! nvvidconv flip-method=2 ! 'video/x-raw(memory:NVMM)' \
       ! nvv4l2h264enc maxperf-enable=true ratecontrol-enable=true EnableTwopassCBR=false peak-bitrate=8000000 bitrate=4000000 iframeinterval=30 insert-sps-pps=true \
-      ! h264parse ! mpegtsmux alignment=7 \
+      ! h264parse ! queue max-size-time=500000000 leaky=downstream ! mpegtsmux alignment=7 \
       ! srtsink uri="srt://${TAILSCALE_HOST}:${port}?mode=caller" latency=${SRT_LATENCY} sync=false &
   fi
   PIDS+=($!)
   STREAM_COUNT=$((STREAM_COUNT + 1))
 done
+
+# Audio-only stream on next port after video
+AUDIO_PORT=$((BASE_PORT + STREAM_COUNT))
+echo "Streaming audio (LavMicro-U) → srt://${TAILSCALE_HOST}:${AUDIO_PORT} ..."
+gst-launch-1.0 -e \
+  alsasrc device=hw:LavMicroU,0 provide-clock=true slave-method=skew \
+  ! queue max-size-time=500000000 leaky=downstream ! audioconvert ! audioresample \
+  ! 'audio/x-raw,rate=48000,channels=1' \
+  ! voaacenc bitrate=64000 \
+  ! aacparse ! mpegtsmux \
+  ! srtsink uri="srt://${TAILSCALE_HOST}:${AUDIO_PORT}?mode=caller" latency=${SRT_LATENCY} sync=false &
+PIDS+=($!)
 
 # Apply C930e settings after pipelines open the device
 if [ -n "$C930E_DEV" ]; then
