@@ -50,14 +50,21 @@ detect_res() {
   echo "none"
 }
 
-# Find C930e device
+# Find C930e device and ensure it's first (always port 9000)
 C930E_DEV=""
+OTHER_DEVS=()
 for dev in "${DEVICES[@]}"; do
-  if v4l2-ctl -d "$dev" --all 2>/dev/null | grep -q "C930e"; then
+  if [ -z "$C930E_DEV" ] && v4l2-ctl -d "$dev" --all 2>/dev/null | grep -q "C930e"; then
     C930E_DEV="$dev"
-    break
+  else
+    OTHER_DEVS+=("$dev")
   fi
 done
+
+if [ -n "$C930E_DEV" ]; then
+  DEVICES=("$C930E_DEV" "${OTHER_DEVS[@]}")
+  echo "C930e at ${C930E_DEV} → pinned to port ${BASE_PORT}"
+fi
 
 PIDS=()
 STREAM_COUNT=0
