@@ -25,11 +25,14 @@ export function createMaps(
 ): MapPanels {
   const trackDef = getActiveTrack();
 
-  // --- Follow map (current GPS position) ---
+  // --- Follow map (current GPS position, rotated to heading) ---
   const followMap = L.map(followEl, {
     zoomControl: false,
     attributionControl: false,
-  }).setView([0, 0], 2);
+    rotate: true,
+    rotateControl: false,
+    shiftKeyRotate: false,
+  } as any).setView([0, 0], 2);
   L.tileLayer(TILES_SAT, TILE_OPTS_SAT).addTo(followMap);
 
   let followTrailSegments: L.Polyline[] = [];
@@ -46,6 +49,9 @@ export function createMaps(
   }
 
   let followHeading = 0;
+  let smoothedHeading = 0;
+  let headingInit = false;
+  const HEADING_ALPHA = 0.15;
   const followMarker = L.marker([0, 0], { icon: makeArrowIcon(0), interactive: false });
 
   let followHasPos = false;
@@ -148,15 +154,26 @@ export function createMaps(
       }
     }
 
-    // read heading
+    // read heading with EWMA smoothing
     const hdgBuf = mgr.getBuffer("gps_heading");
-    const heading = hdgBuf?.values.length ? hdgBuf.values[hdgBuf.values.length - 1] : 0;
+    const rawHeading = hdgBuf?.values.length ? hdgBuf.values[hdgBuf.values.length - 1] : 0;
 
-    // update arrow icons when heading changes
-    if (heading !== followHeading) {
-      followHeading = heading;
-      followMarker.setIcon(makeArrowIcon(heading));
-      overviewMarker.setIcon(makeArrowIcon(heading + trackDef.bearing));
+    if (!headingInit) { smoothedHeading = rawHeading; headingInit = true; }
+    else {
+      // Handle wrap-around (e.g. 350° → 10°)
+      let delta = rawHeading - smoothedHeading;
+      if (delta > 180) delta -= 360;
+      if (delta < -180) delta += 360;
+      smoothedHeading = ((smoothedHeading + HEADING_ALPHA * delta) % 360 + 360) % 360;
+    }
+
+    if (Math.abs(smoothedHeading - followHeading) > 0.5) {
+      followHeading = smoothedHeading;
+      // Follow map rotates to heading — arrow always points up
+      followMarker.setIcon(makeArrowIcon(0));
+      (followMap as any).setBearing(-followHeading);
+      // Overview arrow still relative to track bearing
+      overviewMarker.setIcon(makeArrowIcon(followHeading + trackDef.bearing));
     }
 
     // --- update follow map ---

@@ -27,6 +27,8 @@ let trackDef: TrackDef = TRACKS[trackId] ?? TRACKS.sonoma;
 let sessions: Session[] = [];
 let session: Session | null = null;
 let selectedLapIdx = -1;
+let selectLapGen = 0;
+const inflightFetches = new Map<string, { background: boolean }>();
 let lapTicks: WalTick[] = [];
 let lapCoords: [number, number][] = [];
 let lapSpeeds: number[] = [];
@@ -393,8 +395,45 @@ function setStatus(text: string, cls: "" | "loading" | "error" = "") {
   statusEl.textContent = text;
   statusEl.className = cls ? `${cls}` : "";
   statusEl.id = "review-status";
-  sidebarEl.classList.toggle("syncing", cls === "loading");
+  // Sweep animation driven only by inflight fetches
+  sidebarEl.classList.toggle("syncing", inflightFetches.size > 0);
 }
+
+async function updateSyncStatus(): Promise<void> {
+  if (!session || session.laps.length === 0) return;
+
+  let fetching = 0;
+  let refreshing = 0;
+  let cached = 0;
+  for (const lap of session.laps) {
+    const key = `/lap/${lap.startSeq}-${lap.endSeq}`;
+    const inflight = inflightFetches.get(key);
+    if (inflight) {
+      if (inflight.background) refreshing++;
+      else fetching++;
+      continue;
+    }
+    const hit = await cacheGet(key);
+    if (hit) cached++;
+  }
+  const total = session.laps.length;
+  const uncached = total - cached - fetching - refreshing;
+
+  const lines: string[] = [`<span style="color:var(--text-dim)">${total} laps</span>`];
+  if (cached > 0) lines.push(`<span style="color:#fff">${cached} cached</span>`);
+  if (fetching > 0) lines.push(`<span style="color:var(--accent)">${fetching} fetching</span>`);
+  if (refreshing > 0) lines.push(`<span style="color:var(--accent)">${refreshing} refreshing</span>`);
+  if (uncached > 0) lines.push(`<span style="color:var(--text-dim)">${uncached} uncached</span>`);
+
+  const loading = fetching > 0 || refreshing > 0;
+  statusEl.innerHTML = lines.join("<br>");
+  statusEl.className = loading ? "loading" : "";
+  statusEl.id = "review-status";
+  sidebarEl.classList.toggle("syncing", inflightFetches.size > 0);
+}
+
+// Keep old name as alias for callers
+const updateLoadingStatus = updateSyncStatus;
 
 async function apiFetch(path: string, method = "GET", body?: unknown, skipCache = false, cacheKeyOverride?: string): Promise<any> {
   const key = cacheKeyOverride ?? path;
@@ -412,21 +451,23 @@ async function apiFetch(path: string, method = "GET", body?: unknown, skipCache 
 /** Fetch msgpack from /wal/range, decode into ticks array. Caches parsed result. */
 async function fetchWalRange(
   startSeq: number, endSeq: number, _channels: string,
-  cacheKey: string, forceRefresh: boolean,
+  cacheKey: string, forceRefresh: boolean, alwaysRefetch = false,
 ): Promise<{ ticks: Array<{ seq: number; ts: number; d: Record<string, unknown> }> }> {
   const cached = !forceRefresh ? await cacheGet<{ ticks: any[] }>(cacheKey) : null;
   if (cached) {
-    // Eagerly refetch in background
-    fetchWalRangeRemote(startSeq, endSeq, cacheKey).catch(() => {});
+    if (alwaysRefetch) {
+      fetchWalRangeRemote(startSeq, endSeq, cacheKey, true).catch(() => {});
+    }
     return cached;
   }
-  return fetchWalRangeRemote(startSeq, endSeq, cacheKey);
+  return fetchWalRangeRemote(startSeq, endSeq, cacheKey, false);
 }
 
 async function fetchWalRangeRemote(
-  startSeq: number, endSeq: number, cacheKey: string,
+  startSeq: number, endSeq: number, cacheKey: string, background: boolean,
 ): Promise<{ ticks: Array<{ seq: number; ts: number; d: Record<string, unknown> }> }> {
-  setStatus("LOADING...", "loading");
+  inflightFetches.set(cacheKey, { background });
+  updateSyncStatus();
   try {
     const res = await fetch(`${SERVER_URL}/wal/range?start_seq=${startSeq}&end_seq=${endSeq}`);
     const buf = await res.arrayBuffer();
@@ -439,6 +480,9 @@ async function fetchWalRangeRemote(
     if (cached) { setStatus("OFFLINE (CACHED)"); return cached; }
     setStatus("OFFLINE", "error");
     throw new Error("Server unreachable and no cached data");
+  } finally {
+    inflightFetches.delete(cacheKey);
+    updateSyncStatus();
   }
 }
 
@@ -486,6 +530,33 @@ async function syncFromServer() {
 }
 
 document.getElementById("btn-sync")!.addEventListener("click", syncFromServer);
+
+async function syncAllLaps() {
+  if (!session || session.laps.length === 0) return;
+  const btn = document.getElementById("btn-sync-all")!;
+  btn.textContent = "SYNCING...";
+
+  const promises: Promise<any>[] = [];
+  for (let i = 0; i < session.laps.length; i++) {
+    const lap = session.laps[i];
+    const cacheKey = `/lap/${lap.startSeq}-${lap.endSeq}`;
+    const isLast = i === session.laps.length - 1;
+
+    if (inflightFetches.has(cacheKey)) continue;
+    if (!isLast) {
+      const cached = await cacheGet(cacheKey);
+      if (cached) continue; // skip already cached, except most recent
+    }
+
+    promises.push(fetchWalRangeRemote(lap.startSeq, lap.endSeq, cacheKey, !isLast));
+  }
+
+  await Promise.allSettled(promises);
+  btn.textContent = "SYNC ALL";
+  updateSyncStatus();
+}
+
+document.getElementById("btn-sync-all")!.addEventListener("click", syncAllLaps);
 
 // ── Sessions ──
 async function loadSessions() {
@@ -565,6 +636,7 @@ async function selectSession(id: string) {
   updateMeta();
   renderSessionList();
   renderLapList();
+  updateSyncStatus();
   if (session.laps.length > 0) selectLap(0);
 }
 
@@ -626,23 +698,39 @@ function renderLapList() {
 async function selectLap(idx: number, forceRefresh = false) {
   if (!session || idx < 0 || idx >= session.laps.length) return;
   selectedLapIdx = idx;
+  const gen = ++selectLapGen;
   renderLapList();
 
   const lap = session.laps[idx];
   const channels = "gps_lat,gps_lon,gps_speed,gps_heading,throttle_pos,g_force_x,g_force_y,rpm,gear,brake,coolant_temp,manifold_pressure";
   const cacheKey = `/lap/${lap.startSeq}-${lap.endSeq}`;
 
-  // Check cache before fetching — if miss, clear display so stale data doesn't linger
-  const cached = await cacheGet(cacheKey);
-  if (!cached || forceRefresh) {
+  let fetchPromise = inflightFetches.get(cacheKey);
+  const inflight = !!fetchPromise;
+
+  if (!fetchPromise || forceRefresh) {
+    // Check cache — if miss, clear display so stale data doesn't linger
+    const cached = await cacheGet(cacheKey);
+    if (!cached || forceRefresh) {
+      lapTicks = []; lapCoords = []; lapSpeeds = []; lapThrottles = [];
+      lapGx = []; lapGy = []; lapRpms = []; lapGears = []; lapBrakes = []; lapTimestamps = [];
+      drawTrail();
+      seekEl.max = "0"; seekEl.value = "0";
+      updateSeek(0);
+    }
+    const isLastLap = session!.laps.length > 0 && idx === session!.laps.length - 1;
+    fetchPromise = fetchWalRange(lap.startSeq, lap.endSeq, channels, cacheKey, forceRefresh, isLastLap);
+  } else {
+    // Reusing inflight fetch — clear display and show loading
     lapTicks = []; lapCoords = []; lapSpeeds = []; lapThrottles = [];
     lapGx = []; lapGy = []; lapRpms = []; lapGears = []; lapBrakes = []; lapTimestamps = [];
     drawTrail();
     seekEl.max = "0"; seekEl.value = "0";
     updateSeek(0);
+    updateLoadingStatus();
   }
-
-  const data = await fetchWalRange(lap.startSeq, lap.endSeq, channels, cacheKey, forceRefresh);
+  const data = await fetchPromise;
+  if (gen !== selectLapGen) return; // user switched laps during fetch
   lapTicks = data.ticks;
 
   // Ticks are already grouped by timestamp — just carry forward and extract arrays
@@ -671,7 +759,7 @@ async function selectLap(idx: number, forceRefresh = false) {
   seekEl.max = String(Math.max(0, lapCoords.length - 1));
   seekEl.value = seekEl.max;
   updateSeek(lapCoords.length - 1);
-  setStatus("SYNCED");
+  updateSyncStatus();
 }
 
 function drawTrail() {
