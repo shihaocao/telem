@@ -29,6 +29,7 @@ let session: Session | null = null;
 let selectedLapIdx = -1;
 let selectLapGen = 0;
 const inflightFetches = new Map<string, { background: boolean }>();
+const inflightPromises = new Map<string, Promise<{ ticks: any[] }>>();
 let lapTicks: WalTick[] = [];
 let lapCoords: [number, number][] = [];
 let lapSpeeds: number[] = [];
@@ -40,6 +41,10 @@ let lapGears: number[] = [];
 let lapBrakes: number[] = [];
 let lapTimestamps: number[] = [];
 let trailMode: "speed" | "throttle" | "rpm" | "gear" | "brake" = "speed";
+let allLapsLines: L.Polyline[] = [];
+let trailHitAreas: L.Polyline[] = [];
+let aggVisible: Set<number> = new Set();
+let aggHighlight = -1; // index of highlighted lap, -1 = auto-best
 
 const KMH_TO_MPH = 0.621371;
 const MAX_MPH = 120;
@@ -60,6 +65,88 @@ const seekEl = document.getElementById("review-seek") as HTMLInputElement;
 const seekTimeEl = document.getElementById("review-seek-time")!;
 const seekEpochEl = document.getElementById("review-seek-epoch")!;
 
+const aggControlsEl = document.getElementById("agg-controls")!;
+
+function setAggregateMode(on: boolean): void {
+  gcircleEl.style.display = on ? "none" : "";
+  gaugesEl.style.display = on ? "none" : "";
+  seekEl.style.display = on ? "none" : "";
+  seekTimeEl.style.display = on ? "none" : "";
+  seekEpochEl.style.display = on ? "none" : "";
+  aggControlsEl.style.display = on ? "" : "none";
+}
+
+function renderAggControls(): void {
+  if (selectedLapIdx !== -2 || !session) {
+    aggControlsEl.style.display = "none";
+    aggControlsEl.innerHTML = "";
+    return;
+  }
+  aggControlsEl.style.display = "";
+  aggControlsEl.innerHTML = "";
+
+  const best = getBestTime();
+
+  const table = document.createElement("table");
+  table.className = "agg-table";
+
+  const thead = document.createElement("thead");
+  thead.innerHTML = `<tr><th>VIS</th><th>HL</th><th>LAP</th><th>TIME</th><th>DELTA</th></tr>`;
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+
+  for (let i = 0; i < session.laps.length; i++) {
+    const lap = session.laps[i];
+    const checked = aggVisible.has(i);
+    const highlighted = aggHighlight === i;
+
+    const tr = document.createElement("tr");
+
+    const tdCb = document.createElement("td");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = checked;
+    cb.addEventListener("change", () => {
+      if (cb.checked) aggVisible.add(i); else aggVisible.delete(i);
+      drawAggregateTrails();
+    });
+    tdCb.appendChild(cb);
+
+    const tdRb = document.createElement("td");
+    const rb = document.createElement("input");
+    rb.type = "radio";
+    rb.name = "agg-hl";
+    rb.checked = highlighted;
+    rb.addEventListener("change", () => {
+      aggHighlight = i;
+      drawAggregateTrails();
+    });
+    tdRb.appendChild(rb);
+
+    const tdLap = document.createElement("td");
+    tdLap.textContent = `L${lap.lap}`;
+
+    const tdTime = document.createElement("td");
+    tdTime.textContent = formatTime(lap.time);
+
+    const tdDelta = document.createElement("td");
+    const delta = best !== null && lap.flag === "clean" ? lap.time - best : null;
+    if (delta === 0) { tdDelta.textContent = "BEST"; tdDelta.className = "agg-best"; }
+    else if (delta !== null && delta > 0) tdDelta.textContent = `+${(delta / 1000).toFixed(3)}`;
+
+    tr.appendChild(tdCb);
+    tr.appendChild(tdRb);
+    tr.appendChild(tdLap);
+    tr.appendChild(tdTime);
+    tr.appendChild(tdDelta);
+    tbody.appendChild(tr);
+  }
+
+  table.appendChild(tbody);
+  aggControlsEl.appendChild(table);
+}
+
 // ── Trail mode dropdown (opens upward) ──
 type TrailMode = "speed" | "throttle" | "rpm" | "gear" | "brake";
 const trailModeDropdown = createDropdown("SPEED", "", "up");
@@ -72,7 +159,11 @@ trailModeDropdown.setOptions([
 trailModeDropdown.setValue("speed");
 trailModeDropdown.onChange = (v) => {
   trailMode = v as TrailMode;
-  drawTrail();
+  if (selectedLapIdx === -2) {
+    drawAggregateTrails();
+  } else {
+    drawTrail();
+  }
   renderLegend();
 };
 document.getElementById("review-trail-modes")!.appendChild(trailModeDropdown.el);
@@ -669,10 +760,27 @@ function getBestTime(): number | null {
   return session ? getBestLapTime(session.laps) : null;
 }
 
+async function allLapsCached(): Promise<boolean> {
+  if (!session) return false;
+  for (const lap of session.laps) {
+    const key = `/lap/${lap.startSeq}-${lap.endSeq}`;
+    if (!await cacheGet(key)) return false;
+  }
+  return true;
+}
+
 function renderLapList() {
   lapListEl.innerHTML = "";
   if (!session) return;
   const best = getBestTime();
+  const isAgg = selectedLapIdx === -2;
+
+  // "ALL LAPS" aggregate row
+  const allRow = document.createElement("div");
+  allRow.className = `review-lap${isAgg ? " selected" : ""}`;
+  allRow.innerHTML = `<span class="review-lap-num">ALL</span><span class="review-lap-time">SESSION OVERVIEW</span>`;
+  allRow.addEventListener("click", () => showAllLaps());
+  lapListEl.appendChild(allRow);
 
   for (let i = 0; i < session.laps.length; i++) {
     const lap = session.laps[i];
@@ -693,20 +801,27 @@ function renderLapList() {
     row.addEventListener("click", () => selectLap(i));
     lapListEl.appendChild(row);
   }
+
+  renderAggControls();
 }
 
 async function selectLap(idx: number, forceRefresh = false) {
   if (!session || idx < 0 || idx >= session.laps.length) return;
   selectedLapIdx = idx;
   const gen = ++selectLapGen;
+
+  // Clear aggregate view if switching from ALL
+  for (const l of allLapsLines) l.remove();
+  allLapsLines = [];
+  setAggregateMode(false);
+
   renderLapList();
 
   const lap = session.laps[idx];
-  const channels = "gps_lat,gps_lon,gps_speed,gps_heading,throttle_pos,g_force_x,g_force_y,rpm,gear,brake,coolant_temp,manifold_pressure";
+  const channels = "gps_lat,gps_lon,gps_speed,gps_heading,gps_satellites,throttle_pos,g_force_x,g_force_y,rpm,gear,brake,coolant_temp,manifold_pressure";
   const cacheKey = `/lap/${lap.startSeq}-${lap.endSeq}`;
 
-  let fetchPromise = inflightFetches.get(cacheKey);
-  const inflight = !!fetchPromise;
+  let fetchPromise = inflightPromises.get(cacheKey);
 
   if (!fetchPromise || forceRefresh) {
     // Check cache — if miss, clear display so stale data doesn't linger
@@ -720,6 +835,8 @@ async function selectLap(idx: number, forceRefresh = false) {
     }
     const isLastLap = session!.laps.length > 0 && idx === session!.laps.length - 1;
     fetchPromise = fetchWalRange(lap.startSeq, lap.endSeq, channels, cacheKey, forceRefresh, isLastLap);
+    inflightPromises.set(cacheKey, fetchPromise);
+    fetchPromise.finally(() => inflightPromises.delete(cacheKey));
   } else {
     // Reusing inflight fetch — clear display and show loading
     lapTicks = []; lapCoords = []; lapSpeeds = []; lapThrottles = [];
@@ -742,7 +859,7 @@ async function selectLap(idx: number, forceRefresh = false) {
     // Merge tick channels into carry-forward state
     for (const [ch, val] of Object.entries(tick.d)) latest[ch] = val as number;
 
-    if (latest.gps_lat !== undefined && latest.gps_lon !== undefined) {
+    if (latest.gps_lat !== undefined && latest.gps_lon !== undefined && (latest.gps_satellites ?? 0) >= 5) {
       lapCoords.push([latest.gps_lat, latest.gps_lon]);
       lapSpeeds.push(latest.gps_speed ?? 0);
       lapThrottles.push(latest.throttle_pos ?? 0);
@@ -762,9 +879,165 @@ async function selectLap(idx: number, forceRefresh = false) {
   updateSyncStatus();
 }
 
+async function showAllLaps() {
+  if (!session || session.laps.length === 0) return;
+  const allCached = await allLapsCached();
+  if (!allCached) {
+    setStatus("SYNC ALL LAPS FIRST", "error");
+    return;
+  }
+
+  selectedLapIdx = -2;
+  setAggregateMode(true);
+
+  // Initialize: all laps visible, best highlighted
+  const best = getBestTime();
+  aggVisible = new Set(session.laps.map((_, i) => i));
+  aggHighlight = -1; // -1 means auto-best
+  for (let i = 0; i < session.laps.length; i++) {
+    const lap = session.laps[i];
+    if (best !== null && lap.flag === "clean" && lap.time === best) { aggHighlight = i; break; }
+  }
+
+  renderLapList();
+
+  // Clear single-lap display
+  lapTicks = []; lapCoords = []; lapSpeeds = []; lapThrottles = [];
+  lapGx = []; lapGy = []; lapRpms = []; lapGears = []; lapBrakes = []; lapTimestamps = [];
+  drawTrail();
+  clearSeekDisplay();
+
+  // Parse all lap data from cache
+  aggregateLaps = [];
+  const cleanLaps = session.laps.filter((l) => l.flag === "clean");
+  const worstTime = cleanLaps.length > 0 ? Math.max(...cleanLaps.map((l) => l.time)) : 0;
+  const bestTime = best ?? 0;
+  const timeRange = worstTime - bestTime || 1;
+
+  for (let i = 0; i < session.laps.length; i++) {
+    const lap = session.laps[i];
+    const cacheKey = `/lap/${lap.startSeq}-${lap.endSeq}`;
+    const data = await cacheGet<{ ticks: any[] }>(cacheKey);
+    if (!data) continue;
+
+    const coords: [number, number][] = [];
+    const speeds: number[] = [];
+    const throttles: number[] = [];
+    const rpms: number[] = [];
+    const brakes: number[] = [];
+    const gears: number[] = [];
+    const latest: Record<string, number> = {};
+
+    for (const tick of data.ticks) {
+      for (const [ch, val] of Object.entries(tick.d)) latest[ch] = val as number;
+      if (latest.gps_lat !== undefined && latest.gps_lon !== undefined && (latest.gps_satellites ?? 0) >= 5) {
+        coords.push([latest.gps_lat, latest.gps_lon]);
+        speeds.push(latest.gps_speed ?? 0);
+        throttles.push(latest.throttle_pos ?? 0);
+        rpms.push(latest.rpm ?? 0);
+        brakes.push(latest.brake ?? 0);
+        gears.push(latest.gear ?? 0);
+      }
+    }
+
+    const frac = lap.flag === "clean" ? 1 - (lap.time - bestTime) / timeRange : 0;
+    const opacity = 0.15 + frac * 0.55;
+
+    aggregateLaps.push({ idx: i, coords, speeds, throttles, rpms, brakes, gears, opacity });
+  }
+
+  drawAggregateTrails();
+  renderLegend();
+  setStatus("ALL LAPS");
+}
+
+interface AggregateLap {
+  idx: number;
+  coords: [number, number][];
+  speeds: number[];
+  throttles: number[];
+  rpms: number[];
+  brakes: number[];
+  gears: number[];
+  opacity: number;
+}
+
+let aggregateLaps: AggregateLap[] = [];
+
+const GAP_DIST_DEG = 25 * 0.3048 / 111_320; // 25ft in degrees (~0.0000685°)
+const GAP_DIST_SQ = GAP_DIST_DEG * GAP_DIST_DEG;
+
+/** Split coords into continuous segments, breaking when consecutive points are >25ft apart */
+function splitAtGaps(coords: [number, number][]): [number, number][][] {
+  if (coords.length < 2) return [coords];
+  const segments: [number, number][][] = [];
+  let seg: [number, number][] = [coords[0]];
+  for (let i = 1; i < coords.length; i++) {
+    const dlat = coords[i][0] - coords[i - 1][0];
+    const dlng = coords[i][1] - coords[i - 1][1];
+    if (dlat * dlat + dlng * dlng > GAP_DIST_SQ) {
+      if (seg.length >= 2) segments.push(seg);
+      seg = [];
+    }
+    seg.push(coords[i]);
+  }
+  if (seg.length >= 2) segments.push(seg);
+  return segments;
+}
+
+function drawAggregateTrails(): void {
+  for (const l of allLapsLines) l.remove();
+  allLapsLines = [];
+
+  const colorFnMap: Record<TrailMode, (v: number) => string> = {
+    speed: speedToColor, throttle: throttleToColor, rpm: rpmToColorByValue,
+    gear: gearToColor, brake: (v) => v > 0.5 ? "#e74c3c" : "rgba(255,255,255,0.3)",
+  };
+  const colorFn = colorFnMap[trailMode];
+  const valKey: Record<TrailMode, keyof AggregateLap> = {
+    speed: "speeds", throttle: "throttles", rpm: "rpms", gear: "gears", brake: "brakes",
+  };
+  const key = valKey[trailMode];
+
+  function drawLap(al: AggregateLap, weight: number, opacity: number): void {
+    const values = al[key] as number[];
+    const segs = splitAtGaps(al.coords);
+    for (const seg of segs) {
+      const segStart = al.coords.indexOf(seg[0]);
+      const bucketSize = Math.max(1, Math.ceil(seg.length / 80));
+      for (let b = 0; b < seg.length - 1; b += bucketSize) {
+        const end = Math.min(b + bucketSize + 1, seg.length);
+        const slice = seg.slice(b, end);
+        if (slice.length < 2) continue;
+        const gi = segStart + b;
+        let sum = 0, cnt = 0;
+        for (let j = gi; j < Math.min(gi + bucketSize, values.length); j++) { sum += values[j]; cnt++; }
+        const avg = cnt > 0 ? sum / cnt : 0;
+        const color = colorFn(avg);
+        const line = L.polyline(slice as L.LatLngExpression[], { color, weight, opacity }).addTo(map);
+        allLapsLines.push(line);
+      }
+    }
+  }
+
+  // Non-highlighted visible laps first
+  for (const al of aggregateLaps) {
+    if (!aggVisible.has(al.idx) || al.idx === aggHighlight || al.coords.length < 2) continue;
+    drawLap(al, 1.5, al.opacity);
+  }
+
+  // Highlighted lap on top
+  const hl = aggregateLaps.find((al) => al.idx === aggHighlight);
+  if (hl && aggVisible.has(hl.idx) && hl.coords.length >= 2) {
+    drawLap(hl, 3, 1);
+  }
+}
+
 function drawTrail() {
   for (const l of trailLines) l.remove();
   trailLines = [];
+  for (const h of trailHitAreas) h.remove();
+  trailHitAreas = [];
   if (lapCoords.length < 2) return;
 
   const valuesMap: Record<TrailMode, number[]> = {
@@ -778,29 +1051,75 @@ function drawTrail() {
   const colorFn = colorFnMap[trailMode];
   const bucketSize = Math.max(1, Math.ceil(lapCoords.length / 80));
 
-  for (let b = 0; b < lapCoords.length - 1; b += bucketSize) {
-    const end = Math.min(b + bucketSize + 1, lapCoords.length);
-    const slice = lapCoords.slice(b, end);
-    if (slice.length < 2) continue;
+  // Split into continuous segments at timestamp gaps
+  const segments = splitAtGaps(lapCoords);
 
-    let sum = 0, cnt = 0;
-    for (let j = b; j < Math.min(b + bucketSize, values.length); j++) { sum += values[j]; cnt++; }
-    const avg = cnt > 0 ? sum / cnt : 0;
-    // For gear, use mode (most common) instead of average
-    let color: string;
-    if (trailMode === "gear") {
-      const counts: Record<number, number> = {};
-      for (let j = b; j < Math.min(b + bucketSize, values.length); j++) {
-        counts[values[j]] = (counts[values[j]] ?? 0) + 1;
+  for (const seg of segments) {
+    const segStart = lapCoords.indexOf(seg[0]);
+    const segBucketSize = Math.max(1, Math.ceil(seg.length / 80));
+
+    for (let b = 0; b < seg.length - 1; b += segBucketSize) {
+      const end = Math.min(b + segBucketSize + 1, seg.length);
+      const slice = seg.slice(b, end);
+      if (slice.length < 2) continue;
+      const gi = segStart + b;
+
+      let sum = 0, cnt = 0;
+      for (let j = gi; j < Math.min(gi + segBucketSize, values.length); j++) { sum += values[j]; cnt++; }
+      const avg = cnt > 0 ? sum / cnt : 0;
+      let color: string;
+      if (trailMode === "gear") {
+        const counts: Record<number, number> = {};
+        for (let j = gi; j < Math.min(gi + segBucketSize, values.length); j++) {
+          counts[values[j]] = (counts[values[j]] ?? 0) + 1;
+        }
+        const modeGear = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+        color = gearToColor(modeGear ? parseInt(modeGear[0]) : 0);
+      } else {
+        color = colorFn(avg);
       }
-      const modeGear = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
-      color = gearToColor(modeGear ? parseInt(modeGear[0]) : 0);
-    } else {
-      color = colorFn(avg);
-    }
 
-    const line = L.polyline(slice as L.LatLngExpression[], { color, weight: 3, opacity: 0.8 }).addTo(map);
-    trailLines.push(line);
+      const line = L.polyline(slice as L.LatLngExpression[], { color, weight: 3, opacity: 0.8, interactive: false }).addTo(map);
+      trailLines.push(line);
+    }
+  }
+
+  // Invisible wide polylines per segment for hover interaction
+  const tooltip = L.tooltip({ permanent: false, direction: "top", offset: [0, -10], className: "trail-tooltip" });
+
+  for (const seg of segments) {
+    const hitLine = L.polyline(seg as L.LatLngExpression[], {
+      color: "transparent", weight: 16, opacity: 0, interactive: true,
+    }).addTo(map);
+    trailHitAreas.push(hitLine);
+
+    hitLine.on("mousemove", (e: L.LeafletMouseEvent) => {
+      const { lat, lng } = e.latlng;
+      let minDist = Infinity;
+      let nearIdx = 0;
+      for (let i = 0; i < lapCoords.length; i++) {
+        const dlat = lapCoords[i][0] - lat;
+        const dlng = lapCoords[i][1] - lng;
+        const d = dlat * dlat + dlng * dlng;
+        if (d < minDist) { minDist = d; nearIdx = i; }
+      }
+      seekEl.value = String(nearIdx);
+      updateSeek(nearIdx);
+
+      const formatMap: Record<TrailMode, (i: number) => string> = {
+        speed: (i) => `${Math.round(lapSpeeds[i] * KMH_TO_MPH)} mph`,
+        throttle: (i) => `${Math.round(lapThrottles[i])}% tps`,
+        rpm: (i) => `${Math.round(lapRpms[i])} rpm`,
+        gear: (i) => `gear ${Math.round(lapGears[i])}`,
+        brake: (i) => lapBrakes[i] > 0.5 ? "brake ON" : "brake OFF",
+      };
+      tooltip.setLatLng(e.latlng).setContent(formatMap[trailMode](nearIdx));
+      if (!map.hasLayer(tooltip as any)) (tooltip as any).addTo(map);
+    });
+
+    hitLine.on("mouseout", () => {
+      map.removeLayer(tooltip as any);
+    });
   }
 }
 

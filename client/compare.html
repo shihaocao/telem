@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LAP COMPARE</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+</head>
+<body>
+  <div id="compare-body">
+    <div id="compare-sidebar">
+      <h2>COMPARE <span class="jp">比較</span></h2>
+      <div class="compare-slot" id="slot-a">
+        <div class="slot-label">LAP A</div>
+        <div class="slot-pick" id="pick-a">select lap...</div>
+      </div>
+      <div class="compare-slot" id="slot-b">
+        <div class="slot-label">LAP B</div>
+        <div class="slot-pick" id="pick-b">select lap...</div>
+      </div>
+      <div id="tree-controls">
+        <input id="tree-search" type="text" placeholder="search driver..." />
+        <select id="tree-sort">
+          <option value="lap-asc">lap # ↑</option>
+          <option value="lap-desc">lap # ↓</option>
+          <option value="time-asc">time ↑</option>
+          <option value="time-desc">time ↓</option>
+        </select>
+      </div>
+      <div id="session-tree"></div>
+      <div id="compare-status"></div>
+      <div id="compare-nav">
+        <a href="/" class="nav-link">DASHBOARD</a>
+        <a href="/review.html" class="nav-link">REVIEW</a>
+      </div>
+    </div>
+    <div id="compare-content">
+      <div id="compare-map"></div>
+      <div id="compare-chart">
+        <canvas id="delta-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/src/compare.ts"></script>
+</body>
+</html>

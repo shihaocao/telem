@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -22,10 +23,11 @@ export interface Session {
   laps: Lap[];
 }
 
-export class SessionStore {
+export class SessionStore extends EventEmitter {
   private dir: string;
 
   constructor(dataDir: string) {
+    super();
     this.dir = path.join(dataDir, "sessions");
     fs.mkdirSync(this.dir, { recursive: true });
   }
@@ -73,6 +75,7 @@ export class SessionStore {
       laps: [],
     };
     fs.writeFileSync(this.filePath(session.id), JSON.stringify(session));
+    this.emit("update", session);
     return session;
   }
 
@@ -85,6 +88,7 @@ export class SessionStore {
     if (patch.lapStartTs !== undefined) session.lapStartTs = patch.lapStartTs;
     if (patch.driver !== undefined) session.driver = patch.driver;
     fs.writeFileSync(this.filePath(id), JSON.stringify(session));
+    this.emit("update", session);
     return session;
   }
 

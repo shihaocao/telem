@@ -1,6 +1,7 @@
 import "./stream.css";
 import { TelemetryManager } from "./telemetry";
 import { speedToColor, throttleToColor, rpmToColor } from "./track-utils";
+import { SERVER_URL } from "./server-url";
 
 const KMH_TO_MPH = 0.621371;
 const MAX_MPH = 120;
@@ -10,7 +11,62 @@ const TPS_SEGMENTS = 20;
 const RPM_SEGMENTS = 28;
 
 const mgr = new TelemetryManager();
+const trackId = new URLSearchParams(window.location.search).get("track") ?? "sonoma";
 
+interface Session {
+  id: string;
+  driver: string;
+  running: boolean;
+  laps: { lap: number }[];
+}
+
+let session: Session | null = null;
+let sessionEs: EventSource | null = null;
+
+// ── Session awareness ──
+const driverEl = document.getElementById("gauge-driver")!;
+
+function syncSession(): void {
+  driverEl.textContent = session?.driver || "--";
+}
+
+function subscribeSession(id: string): void {
+  if (sessionEs) { sessionEs.close(); sessionEs = null; }
+  sessionEs = new EventSource(`${SERVER_URL}/sessions/${id}/stream`);
+  sessionEs.addEventListener("session", (e) => {
+    const updated: Session = JSON.parse(e.data);
+    const wasRunning = session?.running;
+    session = updated;
+    syncSession();
+    // Session stopped — fetch latest session to pick up new one
+    if (wasRunning && !updated.running) {
+      setTimeout(fetchLatestSession, 2000);
+    }
+  });
+  sessionEs.onerror = () => {
+    if (sessionEs) { sessionEs.close(); sessionEs = null; }
+    setTimeout(fetchLatestSession, 3000);
+  };
+}
+
+async function fetchLatestSession(): Promise<void> {
+  try {
+    const res = await fetch(`${SERVER_URL}/sessions?track=${trackId}`);
+    const sessions: Session[] = await res.json();
+    if (sessions.length > 0) {
+      const latest = sessions[0];
+      const changed = !session || latest.id !== session.id;
+      session = latest;
+      syncSession();
+      if (changed || latest.running) subscribeSession(latest.id);
+    }
+  } catch {}
+}
+
+// Initial fetch + subscribe
+fetchLatestSession();
+
+// ── Gauges ──
 function createSegments(count: number): HTMLElement {
   const track = document.createElement("div");
   track.className = "seg-track";
@@ -47,7 +103,8 @@ const throttleColorFn = (i: number, n: number) => throttleToColor(((i + 1) / n) 
 const rpmColorFn = (i: number, n: number) => rpmToColor((i + 1) / n);
 
 const container = document.getElementById("gauges")!;
-container.innerHTML = `
+// Append gauges after the driver label
+container.insertAdjacentHTML("beforeend", `
   <div class="gauge">
     <div class="gauge-label">SPEED</div>
     <div class="gauge-header">
@@ -74,7 +131,7 @@ container.innerHTML = `
   <div class="gauge-divider"></div>
   <div class="gauge-label">BRAKE</div>
   <div class="gauge-brake" id="gauge-brake">${Array(10).fill('<div class="gauge-brake-seg"></div>').join("")}</div>
-`;
+`);
 
 const gauges = container.querySelectorAll(".gauge");
 const mphTrack = createSegments(MPH_SEGMENTS);

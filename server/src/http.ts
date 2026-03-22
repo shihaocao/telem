@@ -233,12 +233,19 @@ function handleSessionStream(
   };
   detector.on("lap", onLap);
 
+  // forward session updates (rename, stop, etc.)
+  const onUpdate = (s: any): void => {
+    if (s.id === sessionId) sendEvent("session", s);
+  };
+  store.on("update", onUpdate);
+
   const keepalive = setInterval(() => {
     res.write(": keepalive\n\n");
   }, 15_000);
 
   const cleanup = (): void => {
     detector.off("lap", onLap);
+    store.off("update", onUpdate);
     clearInterval(keepalive);
   };
   req?.socket?.on("close", cleanup);

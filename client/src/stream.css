@@ -69,6 +69,15 @@ html, body {
   overflow: hidden;
 }
 
+.gauge-driver {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: var(--accent);
+  text-shadow: 0 0 8px rgba(0, 0, 0, 0.8);
+  margin-bottom: 4px;
+}
+
 #gauges {
   display: inline-flex;
   flex-direction: column;
