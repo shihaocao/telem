@@ -281,7 +281,7 @@ function createServiceRow(name: string, status: string): ServiceState {
   const logsBtn = el.querySelector(".svc-logs-btn") as HTMLElement;
   const restartBtn = el.querySelector(".svc-restart-btn") as HTMLElement;
 
-  // Add cam exposure controls for video-streaming service
+  // Add cam exposure + mic gain controls for video-streaming service
   if (name === "video-streaming") {
     const camControls = document.createElement("div");
     camControls.className = "svc-cam-controls";
@@ -300,6 +300,24 @@ function createServiceRow(name: string, status: string): ServiceState {
     camControls.querySelector("#svc-exp-down")!.addEventListener("click", () => camExposure("down"));
     camControls.querySelector("#svc-exp-up")!.addEventListener("click", () => camExposure("up"));
     camExposure(null);
+
+    const micControls = document.createElement("div");
+    micControls.className = "svc-cam-controls";
+    micControls.innerHTML = `<button class="svc-btn" id="svc-mic-down">-</button><span class="svc-cam-val" id="svc-mic-val">--</span><button class="svc-btn" id="svc-mic-up">+</button>`;
+    el.querySelector(".svc-header")!.insertBefore(micControls, logsBtn);
+
+    const micValEl = micControls.querySelector("#svc-mic-val")!;
+    async function micGain(action: string | null) {
+      try {
+        const url = action ? `${SERVER_URL}/mic/gain/${action}` : `${SERVER_URL}/mic/gain`;
+        const res = await fetch(url, { method: action ? "POST" : "GET" });
+        const data = await res.json();
+        if (data.gain != null) micValEl.textContent = `mic:${data.gain}%`;
+      } catch {}
+    }
+    micControls.querySelector("#svc-mic-down")!.addEventListener("click", () => micGain("down"));
+    micControls.querySelector("#svc-mic-up")!.addEventListener("click", () => micGain("up"));
+    micGain(null);
   }
 
   const state: ServiceState = { name, status, el, statusEl: statusDot, logsEl, logsVisible: false };

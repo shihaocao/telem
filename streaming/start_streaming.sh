@@ -83,7 +83,7 @@ for i in "${!DEVICES[@]}"; do
   if [ "$STREAM_COUNT" -eq 0 ]; then
     # First stream: video only (with clock overlay)
     echo "Streaming ${dev} (MJPEG ${res}) → srt://${TAILSCALE_HOST}:${port} ..."
-    gst-launch-1.0 -e \
+    gst-launch-1.0 \
       v4l2src device="${dev}" \
       ! "image/jpeg,width=${w},height=${h},framerate=30/1" \
       ! jpegdec \
@@ -95,7 +95,7 @@ for i in "${!DEVICES[@]}"; do
   else
     # Subsequent streams: video only
     echo "Streaming ${dev} (MJPEG ${res}) → srt://${TAILSCALE_HOST}:${port} ..."
-    gst-launch-1.0 -e \
+    gst-launch-1.0 \
       v4l2src device="${dev}" \
       ! "image/jpeg,width=${w},height=${h},framerate=30/1" \
       ! jpegdec ! nvvidconv flip-method=2 ! 'video/x-raw(memory:NVMM)' \
@@ -109,7 +109,7 @@ done
 
 # Audio-only stream on fixed port 9002
 echo "Streaming audio (LavMicro-U) → srt://${TAILSCALE_HOST}:${AUDIO_PORT} ..."
-gst-launch-1.0 -e \
+gst-launch-1.0 \
   alsasrc device=hw:LavMicroU,0 provide-clock=true slave-method=skew \
   ! queue max-size-time=500000000 leaky=downstream ! audioconvert ! audioresample \
   ! 'audio/x-raw,rate=48000,channels=1' \

@@ -82,6 +82,12 @@ export function createServer(wal: WalEngine, sessions: SessionStore, lapDetector
         json(res, 200, handleCamAdjustExposure(1));
       } else if (req.method === "POST" && pathname === "/cam/exposure/down") {
         json(res, 200, handleCamAdjustExposure(-1));
+      } else if (req.method === "GET" && pathname === "/mic/gain") {
+        json(res, 200, handleMicGetGain());
+      } else if (req.method === "POST" && pathname === "/mic/gain/up") {
+        json(res, 200, handleMicAdjustGain(1));
+      } else if (req.method === "POST" && pathname === "/mic/gain/down") {
+        json(res, 200, handleMicAdjustGain(-1));
       } else if (req.method === "GET" && pathname === "/services") {
         json(res, 200, handleServicesStatus());
       } else if (req.method === "GET" && pathname.startsWith("/services/") && pathname.endsWith("/logs")) {
@@ -437,6 +443,39 @@ function handleCamAdjustExposure(dir: number): Record<string, unknown> {
     execSync(`v4l2-ctl -d ${dev} --set-ctrl=gain=${newGain}`);
 
     return { exposure_absolute: newExp, gain: newGain };
+  } catch (err: any) {
+    return { error: err.message };
+  }
+}
+
+// --- Mic controls (amixer) ---
+
+const MIC_CARD = "LavMicroU";
+const MIC_GAIN_STEPS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+
+function getMicGain(): number {
+  try {
+    const out = execSync(`amixer -c ${MIC_CARD} sget Mic 2>/dev/null`, { encoding: "utf-8" });
+    const m = out.match(/\[(\d+)%\]/);
+    return m ? parseInt(m[1], 10) : -1;
+  } catch {
+    return -1;
+  }
+}
+
+function handleMicGetGain(): Record<string, unknown> {
+  const gain = getMicGain();
+  if (gain < 0) return { error: "mic not found" };
+  return { gain };
+}
+
+function handleMicAdjustGain(dir: number): Record<string, unknown> {
+  const cur = getMicGain();
+  if (cur < 0) return { error: "mic not found" };
+  try {
+    const next = stepValue(MIC_GAIN_STEPS, cur, dir);
+    execSync(`amixer -c ${MIC_CARD} sset Mic ${next}% 2>/dev/null`);
+    return { gain: next };
   } catch (err: any) {
     return { error: err.message };
   }
