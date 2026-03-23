@@ -24,11 +24,7 @@ let session: Session | null = null;
 let sessionEs: EventSource | null = null;
 
 // ── Session awareness ──
-const driverEl = document.getElementById("gauge-driver")!;
-
-function syncSession(): void {
-  driverEl.textContent = session?.driver || "--";
-}
+function syncSession(): void {}
 
 function subscribeSession(id: string): void {
   if (sessionEs) { sessionEs.close(); sessionEs = null; }
