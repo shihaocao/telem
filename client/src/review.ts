@@ -479,6 +479,79 @@ async function cacheClearPrefix(prefix: string): Promise<void> {
   } catch {}
 }
 
+// ── Cache export / import ──
+async function exportCache(): Promise<void> {
+  const btn = document.getElementById("btn-export")!;
+  btn.textContent = "SAVING...";
+  try {
+    const db = await dbReady;
+    const tx = db.transaction(DB_STORE, "readonly");
+    const store = tx.objectStore(DB_STORE);
+    const keys: IDBValidKey[] = await new Promise((res, rej) => {
+      const r = store.getAllKeys(); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+    });
+    const values: unknown[] = await new Promise((res, rej) => {
+      const r = store.getAll(); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+    });
+    const entries = keys.map((k, i) => [k, values[i]]);
+    const json = JSON.stringify(entries);
+    const encoded = new TextEncoder().encode(json);
+
+    const cs = new CompressionStream("gzip");
+    const writer = cs.writable.getWriter();
+    writer.write(encoded);
+    writer.close();
+    const compressed = await new Response(cs.readable).arrayBuffer();
+
+    const blob = new Blob([compressed], { type: "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const tag = session ? `${session.track}-${session.id.slice(0, 8)}` : "all";
+    a.download = `telem-${tag}-${new Date().toISOString().slice(0, 10)}.telem`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } finally {
+    btn.textContent = "EXPORT CACHE";
+  }
+}
+
+async function importCache(): Promise<void> {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".telem";
+  input.onchange = async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    const btn = document.getElementById("btn-import")!;
+    btn.textContent = "LOADING...";
+    try {
+      const compressed = await file.arrayBuffer();
+      const ds = new DecompressionStream("gzip");
+      const writer = ds.writable.getWriter();
+      writer.write(new Uint8Array(compressed));
+      writer.close();
+      const decompressed = await new Response(ds.readable).arrayBuffer();
+      const json = new TextDecoder().decode(decompressed);
+      const entries: Array<[string, unknown]> = JSON.parse(json);
+
+      const db = await dbReady;
+      const tx = db.transaction(DB_STORE, "readwrite");
+      const store = tx.objectStore(DB_STORE);
+      for (const [key, value] of entries) store.put(value, key);
+      await new Promise<void>((res, rej) => { tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); });
+
+      window.location.reload();
+    } finally {
+      btn.textContent = "IMPORT CACHE";
+    }
+  };
+  input.click();
+}
+
+document.getElementById("btn-export")!.addEventListener("click", exportCache);
+document.getElementById("btn-import")!.addEventListener("click", importCache);
+
 const statusEl = document.getElementById("review-status")!;
 const sidebarEl = document.getElementById("review-sidebar")!;
 
