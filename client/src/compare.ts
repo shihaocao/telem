@@ -190,11 +190,43 @@ function selectLap(ses: Session, idx: number): void {
   if (lapA && lapB) loadComparison();
 }
 
+// ── IndexedDB cache (shared with review page) ──
+const DB_NAME = "telem_review";
+const DB_STORE = "cache";
+const DB_VERSION = 1;
+
+const dbReady: Promise<IDBDatabase> = new Promise((resolve, reject) => {
+  const req = indexedDB.open(DB_NAME, DB_VERSION);
+  req.onupgradeneeded = () => { req.result.createObjectStore(DB_STORE); };
+  req.onsuccess = () => resolve(req.result);
+  req.onerror = () => reject(req.error);
+});
+
+async function cacheGet<T>(key: string): Promise<T | null> {
+  try {
+    const db = await dbReady;
+    return new Promise((resolve) => {
+      const tx = db.transaction(DB_STORE, "readonly");
+      const r = tx.objectStore(DB_STORE).get(key);
+      r.onsuccess = () => resolve(r.result ?? null);
+      r.onerror = () => resolve(null);
+    });
+  } catch { return null; }
+}
+
 // ── Data loading ──
 async function fetchLapData(lap: Lap): Promise<{ coords: [number, number][]; progress: { norm: number; elapsed: number }[] }> {
-  const res = await fetch(`${SERVER_URL}/wal/range?start_seq=${lap.startSeq}&end_seq=${lap.endSeq}`);
-  const buf = await res.arrayBuffer();
-  const ticks = unpack(new Uint8Array(buf)) as Array<{ seq: number; ts: number; d: Record<string, number> }>;
+  const cacheKey = `/lap/${lap.startSeq}-${lap.endSeq}`;
+  const cached = await cacheGet<{ ticks: Array<{ seq: number; ts: number; d: Record<string, number> }> }>(cacheKey);
+  let ticks: Array<{ seq: number; ts: number; d: Record<string, number> }>;
+
+  if (cached) {
+    ticks = cached.ticks;
+  } else {
+    const res = await fetch(`${SERVER_URL}/wal/range?start_seq=${lap.startSeq}&end_seq=${lap.endSeq}`);
+    const buf = await res.arrayBuffer();
+    ticks = unpack(new Uint8Array(buf)) as typeof ticks;
+  }
 
   const coords: [number, number][] = [];
   const progress: { norm: number; elapsed: number }[] = [];
@@ -482,11 +514,12 @@ new ResizeObserver(() => {
 
 // ── Init ──
 async function init(): Promise<void> {
+  const cacheKey = `/sessions?track=${trackId}`;
   try {
     const res = await fetch(`${SERVER_URL}/sessions?track=${trackId}`);
     sessions = await res.json();
   } catch {
-    sessions = [];
+    sessions = await cacheGet<Session[]>(cacheKey) ?? [];
   }
   renderTree();
 }

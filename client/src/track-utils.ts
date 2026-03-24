@@ -94,10 +94,9 @@ const SPEED_STOPS: ColorStops = [
 ];
 export const speedToColor = (kmh: number) => interpolateColorRamp(kmh, SPEED_STOPS);
 
-// Throttle (%): green → white → yellow → orange → red
+// Throttle (%): white → green
 const THROTTLE_STOPS: ColorStops = [
-  [0, [46, 204, 113]], [10, [46, 204, 113]], [40, [255, 255, 255]],
-  [70, [241, 196, 15]], [90, [255, 107, 53]], [100, [231, 76, 60]],
+  [0, [255, 255, 255]], [100, [46, 204, 113]],
 ];
 export const throttleToColor = (pct: number) => interpolateColorRamp(pct, THROTTLE_STOPS);
 

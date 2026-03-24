@@ -65,6 +65,8 @@ const seekEl = document.getElementById("review-seek") as HTMLInputElement;
 const seekTimeEl = document.getElementById("review-seek-time")!;
 const seekEpochEl = document.getElementById("review-seek-epoch")!;
 
+const playBtn = document.getElementById("btn-play")!;
+
 const aggControlsEl = document.getElementById("agg-controls")!;
 
 function setAggregateMode(on: boolean): void {
@@ -238,16 +240,58 @@ new ResizeObserver((entries) => {
 
 const MAX_G = 1.0;
 const RING_STEPS = [0.25, 0.5, 0.75, 1.0];
+const G_TRAIL_LEN = 200;
+const G_EMA_ALPHA = 0.15;
 
-function drawGCircle(gx: number, gy: number) {
+let gTrail: { x: number; y: number }[] = [];
+let gEmaX = 0, gEmaY = 0, gEmaInit = false;
+let gLastIdx = -1;
+
+function resetGTrail() {
+  gTrail = [];
+  gEmaInit = false;
+  gLastIdx = -1;
+}
+
+function drawGCircle(gx: number, gy: number, seekIdx = -1) {
   if (gW === 0 || gH === 0) return;
+
+  const latG = -gy;
+  const lonG = -gx;
+
+  // Build trail from EWMA-smoothed points
+  if (seekIdx >= 0 && lapGx.length > 0) {
+    // If scrubbing backwards or to a different region, rebuild trail
+    if (seekIdx < gLastIdx || seekIdx - gLastIdx > G_TRAIL_LEN) {
+      gTrail = [];
+      gEmaInit = false;
+      const start = Math.max(0, seekIdx - G_TRAIL_LEN + 1);
+      for (let i = start; i <= seekIdx; i++) {
+        const rx = -(lapGy[i] ?? 0);
+        const ry = -(lapGx[i] ?? 0);
+        if (!gEmaInit) { gEmaX = rx; gEmaY = ry; gEmaInit = true; }
+        else { gEmaX = G_EMA_ALPHA * rx + (1 - G_EMA_ALPHA) * gEmaX; gEmaY = G_EMA_ALPHA * ry + (1 - G_EMA_ALPHA) * gEmaY; }
+        gTrail.push({ x: gEmaX, y: gEmaY });
+      }
+    } else {
+      // Forward scrub: append new points
+      for (let i = gLastIdx + 1; i <= seekIdx; i++) {
+        const rx = -(lapGy[i] ?? 0);
+        const ry = -(lapGx[i] ?? 0);
+        if (!gEmaInit) { gEmaX = rx; gEmaY = ry; gEmaInit = true; }
+        else { gEmaX = G_EMA_ALPHA * rx + (1 - G_EMA_ALPHA) * gEmaX; gEmaY = G_EMA_ALPHA * ry + (1 - G_EMA_ALPHA) * gEmaY; }
+        gTrail.push({ x: gEmaX, y: gEmaY });
+      }
+      if (gTrail.length > G_TRAIL_LEN) gTrail.splice(0, gTrail.length - G_TRAIL_LEN);
+    }
+    gLastIdx = seekIdx;
+  }
+
   gCtx.clearRect(0, 0, gW, gH);
 
   const cx = gW / 2, cy = gH / 2;
   const radius = Math.min(cx, cy) - 20;
   const scale = radius / MAX_G;
-  const latG = -gy;  // lateral = x axis (negate so right turn = right on display)
-  const lonG = -gx; // braking(+) = up
 
   // rings
   gCtx.lineWidth = 1;
@@ -265,6 +309,17 @@ function drawGCircle(gx: number, gy: number) {
   gCtx.moveTo(cx, cy - radius); gCtx.lineTo(cx, cy + radius);
   gCtx.stroke();
 
+  // tick marks
+  for (const g of RING_STEPS) {
+    const r = g * scale;
+    gCtx.beginPath();
+    gCtx.moveTo(cx + r, cy - 3); gCtx.lineTo(cx + r, cy + 3);
+    gCtx.moveTo(cx - r, cy - 3); gCtx.lineTo(cx - r, cy + 3);
+    gCtx.moveTo(cx - 3, cy + r); gCtx.lineTo(cx + 3, cy + r);
+    gCtx.moveTo(cx - 3, cy - r); gCtx.lineTo(cx + 3, cy - r);
+    gCtx.stroke();
+  }
+
   // labels
   gCtx.fillStyle = "rgba(255,255,255,0.2)";
   gCtx.font = "9px monospace";
@@ -272,24 +327,36 @@ function drawGCircle(gx: number, gy: number) {
   for (const g of RING_STEPS) gCtx.fillText(`${g}g`, cx + 3, cy - g * scale - 2);
 
   gCtx.fillStyle = "rgba(255,107,53,0.5)";
-  gCtx.font = "bold 8px monospace";
+  gCtx.font = "bold 9px monospace";
   gCtx.textAlign = "center";
-  gCtx.textBaseline = "top"; gCtx.fillText("BRK", cx, cy - radius - 14);
-  gCtx.textBaseline = "bottom"; gCtx.fillText("ACC", cx, cy + radius + 14);
-  gCtx.textAlign = "left"; gCtx.textBaseline = "middle"; gCtx.fillText("L", cx - radius - 12, cy);
-  gCtx.textAlign = "right"; gCtx.fillText("R", cx + radius + 12, cy);
+  gCtx.textBaseline = "top"; gCtx.fillText("BRAKE", cx, cy - radius - 16);
+  gCtx.textBaseline = "bottom"; gCtx.fillText("ACCEL", cx, cy + radius + 16);
+  gCtx.textAlign = "left"; gCtx.textBaseline = "middle"; gCtx.fillText("L", cx - radius - 14, cy);
+  gCtx.textAlign = "right"; gCtx.fillText("R", cx + radius + 14, cy);
 
-  // dot
-  const px = cx + latG * scale;
-  const py = cy + lonG * scale;
-  gCtx.beginPath(); gCtx.arc(px, py, 6, 0, Math.PI * 2);
+  // trail
+  for (let i = 0; i < gTrail.length; i++) {
+    const t = gTrail[i];
+    const alpha = 0.03 + (i / gTrail.length) * 0.35;
+    gCtx.beginPath();
+    gCtx.arc(cx + t.x * scale, cy + t.y * scale, 1.5, 0, Math.PI * 2);
+    gCtx.fillStyle = `rgba(255, 107, 53, ${alpha})`;
+    gCtx.fill();
+  }
+
+  // current dot
+  const curX = gTrail.length > 0 ? gEmaX : latG;
+  const curY = gTrail.length > 0 ? gEmaY : lonG;
+  const px = cx + curX * scale;
+  const py = cy + curY * scale;
+  gCtx.beginPath(); gCtx.arc(px, py, 8, 0, Math.PI * 2);
   gCtx.fillStyle = "rgba(255,107,53,0.12)"; gCtx.fill();
-  gCtx.beginPath(); gCtx.arc(px, py, 3.5, 0, Math.PI * 2);
+  gCtx.beginPath(); gCtx.arc(px, py, 4, 0, Math.PI * 2);
   gCtx.fillStyle = "#ff6b35"; gCtx.fill();
   gCtx.strokeStyle = "#fff"; gCtx.lineWidth = 1.5; gCtx.stroke();
 
   // magnitude
-  const mag = Math.sqrt(latG * latG + lonG * lonG);
+  const mag = Math.sqrt(curX * curX + curY * curY);
   gCtx.fillStyle = "#eee"; gCtx.font = "bold 11px monospace";
   gCtx.textAlign = "right"; gCtx.textBaseline = "top";
   gCtx.fillText(`${mag.toFixed(2)}g`, gW - 6, 6);
@@ -825,6 +892,7 @@ function clearLapView() {
   updateGaugeSegs(speedSegTrack, 0, () => "");
   updateGaugeSegs(tpsSegTrack, 0, () => "");
   updateGaugeSegs(rpmSegTrack, 0, () => "");
+  resetGTrail();
   drawGCircle(0, 0);
 }
 
@@ -880,6 +948,7 @@ function renderLapList() {
 
 async function selectLap(idx: number, forceRefresh = false) {
   if (!session || idx < 0 || idx >= session.laps.length) return;
+  stopPlayback();
   selectedLapIdx = idx;
   const gen = ++selectLapGen;
 
@@ -1200,6 +1269,7 @@ function clearSeekDisplay() {
   if (posMarker) { posMarker.remove(); posMarker = null; }
   seekTimeEl.textContent = "--";
   seekEpochEl.textContent = "";
+  resetGTrail();
   drawGCircle(0, 0);
   speedValueEl.textContent = "--";
   updateGaugeSegs(speedSegTrack, 0, () => "");
@@ -1236,7 +1306,7 @@ function updateSeek(idx: number) {
   }
 
   // G-force dial
-  drawGCircle(lapGx[idx] ?? 0, lapGy[idx] ?? 0);
+  drawGCircle(lapGx[idx] ?? 0, lapGy[idx] ?? 0, idx);
 
   // Speed gauge
   const spdKmh = lapSpeeds[idx] ?? 0;
@@ -1263,7 +1333,56 @@ function updateSeek(idx: number) {
   brakeEl.classList.toggle("active", (lapBrakes[idx] ?? 0) > 0.5);
 }
 
-seekEl.addEventListener("input", () => updateSeek(parseInt(seekEl.value, 10)));
+seekEl.addEventListener("input", () => {
+  stopPlayback();
+  updateSeek(parseInt(seekEl.value, 10));
+});
+
+// ── Playback ──
+let playRaf = 0;
+let playStartWall = 0;
+let playStartTs = 0;
+let playStartIdx = 0;
+
+function stopPlayback() {
+  if (playRaf) { cancelAnimationFrame(playRaf); playRaf = 0; }
+  playBtn.innerHTML = "&#9654;";
+}
+
+function startPlayback() {
+  if (lapTimestamps.length < 2) return;
+  const curIdx = parseInt(seekEl.value, 10);
+  if (curIdx >= lapTimestamps.length - 1) {
+    // at end, restart from beginning
+    seekEl.value = "0";
+    updateSeek(0);
+  }
+  playStartIdx = parseInt(seekEl.value, 10);
+  playStartWall = performance.now();
+  playStartTs = lapTimestamps[playStartIdx];
+  playBtn.innerHTML = "&#9646;&#9646;";
+  playTick();
+}
+
+function playTick() {
+  const elapsed = performance.now() - playStartWall;
+  const targetTs = playStartTs + elapsed;
+
+  // find the tick closest to targetTs
+  let idx = playStartIdx;
+  while (idx < lapTimestamps.length - 1 && lapTimestamps[idx + 1] <= targetTs) idx++;
+
+  seekEl.value = String(idx);
+  updateSeek(idx);
+
+  if (idx >= lapTimestamps.length - 1) { stopPlayback(); return; }
+  playRaf = requestAnimationFrame(playTick);
+}
+
+playBtn.addEventListener("click", () => {
+  if (playRaf) stopPlayback();
+  else startPlayback();
+});
 
 // ── Init ──
 async function init() {
