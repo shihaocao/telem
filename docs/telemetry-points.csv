@@ -1,0 +1,14 @@
+Telemetry Point, Sense Strategy, Signal Type, Arduino Pin, Sense Line
+Video 1, Camera, USB,,
+Video 2, Camera, USB,,
+Car Audio, Microphone, USB,,
+Brake Indicator,binary yes or no voltage,"12V divided down, 4.3X",A5,White/Green Brake Light Line
+Battery Voltage,analog,"12V divided down, 4.3X",A6,Tap off the PDB +12V bus
+Throttle Position,calibrate 0 - 100,5V analog,A9,D11 ECU D connector
+Engine Coolant Temp (T/W),We need a lookup table,5V analog,A8,D13 ECU D Connector
+MAP,We need a lookup table,5V analog,A10,D13 ECU D Connector
+RPM (Tach),Derive instantaneous pulses per second,"12V square wave pulses, stepped down to 5V range",D18,A7 BLU Dash Connector
+VSS,Derive instantaneous pulses per second,"12V square wave pulses, stepped down to 5V range",D19,B10 ECU B Connector
+GPS,Racebox,Digital,,
+Accel,Racebox,Digital,,
+Gyro,Racebox,Digital,,
