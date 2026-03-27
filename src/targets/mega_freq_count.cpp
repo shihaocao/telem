@@ -27,11 +27,12 @@ ISR(TIMER1_COMPA_vect) {
   writeIndex++;
   if (writeIndex >= BUFFER_SIZE) {
     writeIndex = 0;
-    // swap buffers
-    volatile uint8_t *temp = writeBuffer;
-    writeBuffer = readBuffer;
-    readBuffer = temp;
-    bufferReady = true;
+    if (!bufferReady) {
+      volatile uint8_t *temp = writeBuffer;
+      writeBuffer = readBuffer;
+      readBuffer = temp;
+      bufferReady = true;
+    }
   }
 }
 
