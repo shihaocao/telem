@@ -198,13 +198,25 @@ journalctl -u telem-server -u serial-bridge -u racebox-bridge -u video-streaming
 
 ## Development
 
-```bash
-# Client (Vite dev server)
-cd client && npm run dev
+### Local Dashboard (laptop)
 
-# Server
+Start the server and client in two terminals:
+
+```bash
+# Terminal 1 — server
 cd server && npx tsx src/main.ts
 
+# Terminal 2 — client (Vite dev server, port 5173)
+cd client && npm run dev
+```
+
+Open **http://localhost:5173** — the `?local=true` flag connects to `localhost:4400` instead of the Jetson's Tailscale address.
+
+Add `?local=true` — to connect to local synthetic data.
+
+### Other Commands
+
+```bash
 # Tests
 cd server && npx vitest run
 
