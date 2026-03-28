@@ -1,42 +1,35 @@
 # Telem
 
-Racing telemetry system for a 1992 Honda Accord EX (F22A4, H2U5 5-speed manual). Captures sensor data, GPS/IMU, and multi-camera video during track days. Runs headless on a Jetson Nano with a web-based dashboard accessible over Tailscale.
+This is a project to build out a telemetry system, specifically on a 1992 Honda Accord for a realtime dashboard and spectator livestream.
 
-## Diagrams
+We use a combination of analog engine taps, GPS, and cameras streaming data back to a Jetson Nano through a 5G Modem, back to home base where a ground computer exposes all the data via a custom web dashboard.
 
+## HW Architecture
 
+![Telemetry Block Diagram](docs/500-telem-block-diagram.png)
 
-## Architecture
+## Dataflow
 
 ```
-┌─────────────────┐     ┌──────────────────┐
-│  Arduino Mega   │     │  RaceBox Micro   │
-│  ECT TPS MAP    │     │  GPS/IMU @ 25Hz  │
-│  Brake Vbatt    │     │  (BLE / UBX)     │
-│  RPM VSS @ 25Hz │     └────────┬─────────┘
-└────────┬────────┘              │
-         │ serial 115200         │ BLE
-         ▼                       ▼
-┌─────────────────────────────────────────┐
-│            Jetson Nano                  │
-│                                         │
-│  serial-bridge ──┐                      │
-│  racebox-bridge ─┤──► telem-server      │
-│                  │    (WAL engine)       │
-│                  │       │               │
-│  video-streaming │    HTTP :4400         │
-│  (GStreamer/SRT) │    SSE /stream        │
-│  cam1 :9000      │    msgpack /wal/range │
-│  cam2 :9001      │                      │
-│  audio :9002     │                      │
-└─────────────────────────────────────────┘
-         │ Tailscale
-         ▼
-┌─────────────────────────────────────────┐
-│  Browser (Vite client)                  │
-│  Dashboard · Review · Debug · Editor    │
-│  Stream overlays (OBS browser source)   │
-└─────────────────────────────────────────┘
+┌──────────────┐                                                                    ┌─────────────────────────────────────┐
+│ Arduino Mega │  serial   ┌──────────────────────────────────────────┐             │  Ground Computer(s)                 │
+│ ECT TPS MAP  │──115200──►│            Jetson Orin NX                │             │                                     │
+│ Brake Vbatt  │           │                                          │             │  ┌────────────┐  ┌──────────────┐   │
+│ RPM VSS      │           │  serial-bridge ──┐                       │             │  │  Browser   │  │ OBS Studio   │   │
+└──────────────┘           │                  ├──► telem-server       │             │  │  (Vite)    │  │              │   │
+                           │  racebox-bridge ─┘    (WAL engine)       │             │  │            │  │ SRT ingest   │   │
+┌──────────────┐           │                       HTTP :4400  ┌──────┤             │  │ Dashboard  │  │ cam1/cam2    │   │
+│ RaceBox      │   BLE     │                       SSE /stream │      │             │  │ Review     │  │ audio        │   │     ┌────────┐
+│ Micro        │──────────►│                       msgpack     │ Cell ├─ ─ ─ ─ ─ ─--│─►│ Debug      │  │              │   │     │        │
+│ GPS/IMU      │           │                        /wal/range │Modem │    4G/5G    │  │ Editor     │  │ Browser src  │   │     │ Twitch │
+│ 25Hz         │           │  video-streaming                  │GL-X3k│  Starlink   │  └────────────┘  │ overlays     │ ──RTMP─►│        │
+└──────────────┘           │  (GStreamer/SRT)                  │      │  Tailscale  │                  └──────────────┘   │     └────────┘
+                           │  cam1 :9000                       └──────┤             │                                     │
+┌──────────────┐           │  cam2 :9001                              │             └─────────────────────────────────────┘
+│ Camera1      │   USB     │  audio :9002                             │          
+│ Camera2      │──────────►│                                          │          
+│ Microphone   │           └──────────────────────────────────────────┘                                                     
+└──────────────┘                                                                                                          
 ```
 
 ## Directory Structure
@@ -110,7 +103,6 @@ GPS-based — no trackside hardware needed.
 
 ## Hardware Architecture
 
-![Telemetry Block Diagram](docs/500-telemetry-block-diagram.jpg)
 
 ## BOM
 
