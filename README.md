@@ -93,10 +93,9 @@ fonts/            Berkeley Mono
 | Microcontroller | [Arduino Mega 2560](https://www.amazon.com/Arduino-ATmega2560-Compatible-Advanced-Projects/dp/B0046AMGW0/) | 54 digital I/O, 16 analog inputs | USB, 1W max | $49 | Telemetry | Overkill; smaller 5V Arduino would suffice |
 | Microphone | [LavMicro-U](https://www.amazon.com/Saramonic-Professional-Microphone-Interviews-LAVMICRO-U/dp/B09V9NVL4Q/) | USB lavalier | USB, 0.5W | $30 | Audio | In-car audio, Opus 64kbps |
 
-### Design Considerations
-We had considered a Starlink Mini as vehicle data offload but decided against this because I was unsure if we would be in a garage. The line-of-sight requirements are tough.
-
-We has also considered running the stream on the vehicle, but this would have been very rough as the stream would have died if the telemetry computer restarted. So keeping that separate was a great choice.
+## Totals
+- Total cost: `~$1850` for listed parts. `~$2000` when including random wires, resistors/diodes, butt joints, t splices, small wires, solder, perfboard, zipties, etc.
+- Total power: `~100W` max theoretical, in practice steady state power draw was likely closer to `20-30W` maximum
 
 ## Telemetry Points
 
@@ -116,39 +115,9 @@ We has also considered running the stream on the vehicle, but this would have be
 | Accel | RaceBox | Digital | — | — |
 | Gyro | RaceBox | Digital | — | — |
 
-### Tapping Strategy
-
-Since the 1992 Honda Accord is before the OBD2 era, we needed to grab most of our telemetry points via analog sense taps. For 12V signals, this would require a voltage divider circuit. For 5V signals, as long as we use a 5V micro controller we can skip the voltage divider.
-
-#### Details of Tapping
-
-Direct sense taps require a high impedance resistor in line to prevent the Arduino ESD protection diodes (when arduino is unpowered) from pulling the sense lines low and confusing the ECU. Especially if MAP is pulled low, the car will not start.
-
-The RPM line comes from the ignition which has a lot of noise, and can separately also spike as high as 24V or 36V. I have a diode to suppress the voltage spikes, but next time I'll add a cap to suppress the noise.
-
-To make the build complete, it is helpful to have:
-- T Splice connectors
-- Butt splice connectors
-- Diodes, resistors, capacitors
-- Physical switch
-- Inline fuses and fuse holders
-
 ## Power Architecture
 
 ![Onboard Power Diagram](docs/501-onboard-power-diagram.png)
-
-### Power Considerations
-
-I had considered adding another secondary battery onboard, but descoped it at the time to make deadlines. The primary goal was to power as much as we could off the onboard battery to keep things simple.
-
-At the race, we noticed two significant downsides:
-- You can deplete the vehicle battery while running telemetry which means we had to repeatedly hook up a battery charger while running telem only
-- Cranking the starter brings the `+12V rail below +10V` which browns out the computers. This meant stalling the car and restarting the car would necessitate a power cycle, very annoying.
-
-For the next iteration we plan to add a small auxiliary battery with:
-- a relay that switches off if the kill switch is switched to cut power to telemetry
-- diodes that prevent auxiliary battery from flowing to the `main electrical bus`
-</details>
 
 ## Driver Communication
 
