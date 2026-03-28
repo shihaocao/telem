@@ -11,25 +11,53 @@ We use a combination of analog engine taps, GPS, and cameras streaming data back
 ## Dataflow
 
 ```
-┌──────────────┐                                                                    ┌─────────────────────────────────────┐
-│ Arduino Mega │  serial   ┌──────────────────────────────────────────┐             │  Ground Computer(s)                 │
-│ ECT TPS MAP  │──115200──►│            Jetson Orin NX                │             │                                     │
-│ Brake Vbatt  │           │                                          │             │  ┌────────────┐  ┌──────────────┐   │
-│ RPM VSS      │           │  serial-bridge ──┐                       │             │  │  Browser   │  │ OBS Studio   │   │
-└──────────────┘           │                  ├──► telem-server       │             │  │  (Vite)    │  │              │   │
-                           │  racebox-bridge ─┘    (WAL engine)       │             │  │            │  │ SRT ingest   │   │
-┌──────────────┐           │                       HTTP :4400  ┌──────┤             │  │ Dashboard  │  │ cam1/cam2    │   │
-│ RaceBox      │   BLE     │                       SSE /stream │      │             │  │ Review     │  │ audio        │   │     ┌────────┐
-│ Micro        │──────────►│                       msgpack     │ Cell ├─ ─ ─ ─ ─ ─--│─►│ Debug      │  │              │   │     │        │
-│ GPS/IMU      │           │                        /wal/range │Modem │    4G/5G    │  │ Editor     │  │ Browser src  │   │     │ Twitch │
-│ 25Hz         │           │  video-streaming                  │GL-X3k│  Starlink   │  └────────────┘  │ overlays     │ ──RTMP─►│        │
-└──────────────┘           │  (GStreamer/SRT)                  │      │  Tailscale  │                  └──────────────┘   │     └────────┘
-                           │  cam1 :9000                       └──────┤             │                                     │
-┌──────────────┐           │  cam2 :9001                              │             └─────────────────────────────────────┘
-│ Camera1      │   USB     │  audio :9002                             │          
-│ Camera2      │──────────►│                                          │          
-│ Microphone   │           └──────────────────────────────────────────┘                                                     
-└──────────────┘                                                                                                          
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│ Arduino Mega │  │ RaceBox      │  │ Camera1      │
+│ ECT TPS MAP  │  │ Micro        │  │ Camera2      │
+│ Brake Vbatt  │  │ GPS/IMU      │  │ Microphone   │
+│ RPM VSS      │  │ 25Hz         │  └──────┬───────┘
+└──────┬───────┘  └──────┬───────┘         │
+       │ serial 115200   │ BLE             │ USB
+       ▼                 ▼                 ▼
+┌─────────────────────────────────────────────┐
+│              Jetson Orin NX                 │
+│                                             │
+│  serial-bridge ──┐                          │
+│                  ├──► telem-server          │
+│  racebox-bridge ─┘    (WAL engine)          │
+│                          │                  │
+│  video-streaming      HTTP :4400            │
+│  (GStreamer/SRT)      SSE /stream           │
+│  cam1 :9000           msgpack /wal/range    │
+│  cam2 :9001                                 │
+│  audio :9002                                │
+└──────────────────────┬──────────────────────┘
+                       │ Ethernet
+                       ▼
+                ┌──────────────┐
+                │  Cell Modem  │
+                │  GL-X3000    │
+                └──────┬───────┘
+                       │ 4G/5G · Starlink · Tailscale
+                       ▼
+┌─────────────────────────────────────────────┐
+│  Ground Computer(s)                         │
+│                                             │
+│  ┌────────────┐      ┌──────────────────┐   │
+│  │  Browser   │      │ OBS Studio       │   │
+│  │  (Vite)    │      │  SRT ingest      │   │
+│  │            │      │  cam1/cam2 audio │   │
+│  │ Dashboard  │      │  Browser src     │   │
+│  │ Review     │      │  overlays        │   │
+│  │ Debug      │      └────────┬─────────┘   │
+│  │ Editor     │               │             │
+│  └────────────┘               │             │
+└───────────────────────────────┼─────────────┘
+                                │ RTMP
+                                ▼
+                          ┌──────────┐
+                          │  Twitch  │
+                          └──────────┘
 ```
 
 ## Directory Structure
