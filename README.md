@@ -163,7 +163,7 @@ For the next iteration we plan to add a small auxiliary battery with:
 We ran driver communication completely parallel to telemtry. We would communicate with drivers via `discord` audio call. This meant that if the `telemetry` stack restarted, our `audio` communications persisted. This was very useful during `hotpits` when we shut off telemetry, or if we ever had to crank the starter on track.
 
 
-## Setup
+# Software Setup
 
 On the Jetson:
 
@@ -178,7 +178,7 @@ On the Jetson:
 journalctl -u telem-server -u serial-bridge -u racebox-bridge -u video-streaming -f
 ```
 
-### Services
+### Services (on Jetson)
 
 | Service | Description |
 |---|---|
@@ -217,9 +217,6 @@ cd server && npx tsx scripts/gen-data.ts
 
 # Compact WAL (run offline or delegates to server if running)
 cd server && npx tsx scripts/compact.ts --data-dir ./data
-
-# Firmware upload
-pio run -e mega_serial -t upload
 ```
 
 ## Embedded
@@ -227,10 +224,6 @@ pio run -e mega_serial -t upload
 ```bash
 # Upload Arduino Mega firmware
 pio run -e mega_serial -t upload
-
-# Other targets
-pio run -e teensy_blink -t upload
-pio run -e teensy_serial -t upload
 ```
 
 ### udev rules (for Arduino on Linux)
